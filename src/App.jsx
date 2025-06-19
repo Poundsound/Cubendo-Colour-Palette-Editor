@@ -889,12 +889,12 @@ export default function App() {
               display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length < 2 ? 0.5 : 1, cursor: colors.length < 2 ? 'not-allowed' : 'pointer', marginBottom: 12, minHeight: 36, justifyContent: 'flex-start'
             }}
             aria-label="Balance Palette"
-            title="Balance palette: harmonize hue, lightness, and saturation for consistency"
+            title="Balance palette: harmonise hue, lightness, and saturation for consistency"
           >
             <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M4 10h12M6 7l-2 3 2 3M14 13l2-3-2-3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             <span>Balance Palette</span>
           </button>
-          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '5px 0 6px 0' }} />
+          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '5px 0 12px 0' }} />
           {/* Danger Zone Section */}
           <div style={{ fontSize: 13, color: '#ff4d4d', fontWeight: 700, marginBottom: 3, letterSpacing: '0.5px' }}>Danger Zone</div>
           <button className="btn" onClick={handleDeleteAll} disabled={colors.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', color: '#ff4d4d', fontWeight: 700, borderRadius: 7, fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1.5px solid #ff4d4d', padding: '7px 10px', transition: 'background 0.15s,color 0.15s', outline: 'none', opacity: colors.length === 0 ? 0.5 : 1, cursor: colors.length === 0 ? 'not-allowed' : 'pointer', marginBottom: 0 }} aria-label="Delete All Colors" onMouseOver={e => { e.currentTarget.style.background = '#ff4d4d'; e.currentTarget.style.color = '#fff'; }} onMouseOut={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#ff4d4d'; }}>
@@ -902,6 +902,37 @@ export default function App() {
             <span>Delete All</span>
           </button>
           {error && <div style={{ color: '#ff4d4d', fontWeight: 600, fontSize: 15, marginTop: 8 }}>{error}</div>}
+          {/* Donation Button Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '18px 0 0 0' }}>
+            <a
+              href="https://www.paypal.com/donate/?hosted_button_id=M5R7YKVH2SPQC"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                background: '#ffc439',
+                color: '#222',
+                fontWeight: 700,
+                fontSize: 15,
+                borderRadius: 7,
+                padding: '8px 18px',
+                textDecoration: 'none',
+                boxShadow: '0 1px 4px #0002',
+                border: '1.5px solid #e6b800',
+                marginTop: 2,
+                marginBottom: 2,
+                transition: 'background 0.15s',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+              aria-label="Donate via PayPal"
+            >
+              PayPal
+            </a>
+            <span style={{ color: '#bbb', fontSize: 12, marginTop: 2, textAlign: 'center' }}>Support development</span>
+          </div>
         </aside>
         {/* Main content: color palette */}
         <main style={{ flex: 1, width: '100%', maxWidth: 1400, margin: '24px 24px 24px 20px', padding: 0, minWidth: 0 }}>
@@ -982,24 +1013,35 @@ export default function App() {
               <b>Tip:</b> Make a backup copy of your Defaults.xml before editing, so you can restore it if needed.
             </p>
             <p style={{ marginBottom: 12 }}>
-              <strong>Getting Started:</strong>
+              <strong>Getting Started & Controls:</strong>
             </p>
             <ol style={{ marginLeft: 16, marginBottom: 12 }}>
               <li style={{ marginBottom: 8 }}>
                 <strong>Import Defaults.xml:</strong> Click the "Import" button and select your Defaults.xml file from the Cubase directory above.
               </li>
               <li style={{ marginBottom: 8 }}>
-                <strong>Edit Colors:</strong> Click on any color swatch to change its color. You can also reorder colors by dragging them.
+                <strong>Edit Colours:</strong> Click any colour swatch to open the colour picker. <br/>
+                <b>Drag</b> a swatch to reorder. <br/>
+                <b>Ctrl+Click</b> a swatch to duplicate it. <br/>
               </li>
               <li style={{ marginBottom: 8 }}>
-                <strong>Apply a Gradient:</strong> Use the Gradient Generator to create smooth color transitions. Adjust the start color and number of steps.
+                <strong>Apply a Gradient:</strong> Use the Gradient Generator to create smooth colour transitions. Adjust the start colour, number of steps, saturation, and end percentage. Click "Add Gradient" to append the generated colours to your palette.
+              </li>
+              <li style={{ marginBottom: 8 }}>
+                <strong>Balance Palette:</strong> Click "Balance Palette" to harmonise hue, lightness, and saturation for a more consistent look.
+              </li>
+              <li style={{ marginBottom: 8 }}>
+                <strong>Undo/Redo:</strong> Use the Undo and Redo buttons to revert or reapply changes to your palette.
+              </li>
+              <li style={{ marginBottom: 8 }}>
+                <strong>Danger Zone:</strong> Use "Delete All" to clear your palette. <span style={{ color: '#ff4d4d' }}><b>This cannot be undone!</b></span>
               </li>
               <li style={{ marginBottom: 8 }}>
                 <strong>Export Your Palette:</strong> Once you're satisfied, click "Export" to download the updated Defaults.xml for Cubase.
               </li>
             </ol>
             <p style={{ marginBottom: 0 }}>
-              <strong>Note:</strong> This tool is continuously being improved. If you encounter any issues or have suggestions, please let us know!
+              <strong>Note:</strong> This tool is continuously being improved. If you encounter any issues or have suggestions, please let me know!
             </p>
           </div>
         </main>
