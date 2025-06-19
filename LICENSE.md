@@ -1,0 +1,20 @@
+Cubase Color Palette Editor - Custom License
+===========================================
+
+Copyright (c) 2025 [Marcus Dellicompagni www.poundsound.uk]
+
+This software is provided as donationware for personal, non-commercial use only. By using this software, you agree to the following terms:
+
+1. **Non-Commercial Use Only**: You may use this software solely for personal, non-commercial purposes. Any commercial use, including but not limited to use in a business, for-profit activity, or as part of a commercial product or service, is strictly prohibited.
+
+2. **No Redistribution**: You may not redistribute, sublicense, sell, lease, or otherwise make this software available to any third party, in whole or in part, whether modified or unmodified.
+
+3. **Donationware**: If you find this software useful, you are encouraged (but not required) to make a donation to support its development. Donation information is available on the project website.
+
+4. **No Warranty**: This software is provided "as is," without warranty of any kind, express or implied. The author is not liable for any damages arising from the use of this software.
+
+5. **Intellectual Property**: All rights, title, and interest in and to the software remain with the author.
+
+6. **Not Affiliated with Steinberg**: This project is not affiliated with or endorsed by Steinberg Media Technologies GmbH. "Cubase" is a trademark of Steinberg.
+
+By using this software, you acknowledge that you have read, understood, and agree to these terms.
