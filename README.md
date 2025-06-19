@@ -1,12 +1,20 @@
-# React + Vite
+Cubase Color Palette Editor - Custom License
+===========================================
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Copyright (c) 2025 [Marcus Dellicompagni www.poundsound.uk]
 
-Currently, two official plugins are available:
+This software is provided as donationware for personal, non-commercial use only. By using this software, you agree to the following terms:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. **Non-Commercial Use Only**: You may use this software solely for personal, non-commercial purposes. Any commercial use, including but not limited to use in a business, for-profit activity, or as part of a commercial product or service, is strictly prohibited.
 
-## Expanding the ESLint configuration
+2. **No Redistribution**: You may not redistribute, sublicense, sell, lease, or otherwise make this software available to any third party, in whole or in part, whether modified or unmodified.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. **Donationware**: If you find this software useful, you are encouraged (but not required) to make a donation to support its development. Donation information is available on the project website.
+
+4. **No Warranty**: This software is provided "as is," without warranty of any kind, express or implied. The author is not liable for any damages arising from the use of this software.
+
+5. **Intellectual Property**: All rights, title, and interest in and to the software remain with the author.
+
+6. **Not Affiliated with Steinberg**: This project is not affiliated with or endorsed by Steinberg Media Technologies GmbH. "Cubase" is a trademark of Steinberg.
+
+By using this software, you acknowledge that you have read, understood, and agree to these terms.
