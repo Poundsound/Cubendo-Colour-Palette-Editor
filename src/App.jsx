@@ -4,7 +4,6 @@ import { saveAs } from 'file-saver';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
-import { HexColorPicker } from 'react-colorful';
 
 // Helper: get color name from hex
 function getColorName(hex) {
@@ -301,9 +300,8 @@ function DraggableRow({ rowIndex, rowId, children }) {
           gap: 8,
         };
         
-        // Only add visual effects during drag, not transform
+        // Only add visual effects during drag - NO transparency
         if (snapshot.isDragging) {
-          style.opacity = 0.8;
           style.background = '#252525';
           style.borderRadius = '8px';
           style.padding = '4px';
@@ -447,6 +445,10 @@ export default function App() {
   const gridRef = useRef(null);
   // Custom color editor state
   const [colorEditor, setColorEditor] = useState(null); // { id, color, h, s, v } or null
+  // Gradient color picker state
+  const [gradientEditor, setGradientEditor] = useState(null); // { startH, startS, startV, endH, endS, endV, manualMode } or null
+  const [gradientManualEnd, setGradientManualEnd] = useState(false); // Toggle for manual end color
+  const [gradientEndColor, setGradientEndColor] = useState('#FFFFFF'); // Manual end color
 
   // Track if a drag is in progress to prevent color picker popup
   // const [isDragging, setIsDragging] = useState(false);
@@ -487,6 +489,8 @@ export default function App() {
       window.removeEventListener('keydown', handleEsc);
     };
   }, [eyedropper]);
+
+
 
   // Helper to push to history (only if changed)
   const pushHistory = useCallback((newColors) => {
@@ -628,7 +632,9 @@ export default function App() {
   const previewGradientStart = setSaturation(gradientStart, gradientSaturation);
   // Compute end color based on previewed start color and percentage, clamped so 100% is not pure white
   const MAX_LIGHTEN = 0.7; // 0.7 = 70% toward white at 100%
-  const computedGradientEnd = lighten(previewGradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+  const computedGradientEnd = gradientManualEnd 
+    ? gradientEndColor 
+    : lighten(previewGradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
 
   // Handle drag end for reordering rows with @hello-pangea/dnd
   const onDragEnd = (result) => {
@@ -869,6 +875,7 @@ export default function App() {
           onClick={() => setColorEditor(null)}
         >
           <div
+            className="custom-color-picker"
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
@@ -917,6 +924,7 @@ export default function App() {
                 <>
                   {/* Saturation-Value Picker */}
                   <div
+                    className="custom-color-picker"
                     style={{
                       width: '100%',
                       height: 200,
@@ -965,7 +973,7 @@ export default function App() {
                   </div>
 
                   {/* Hue Slider */}
-                  <div style={{ marginBottom: 12 }}>
+                  <div className="custom-color-picker" style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <label style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>H</label>
                       <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace' }}>{Math.round(h)}°</span>
@@ -992,7 +1000,7 @@ export default function App() {
                   </div>
 
                   {/* Saturation Slider */}
-                  <div style={{ marginBottom: 12 }}>
+                  <div className="custom-color-picker" style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <label style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>S</label>
                       <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace' }}>{Math.round(s)}%</span>
@@ -1019,7 +1027,7 @@ export default function App() {
                   </div>
 
                   {/* Value/Brightness Slider */}
-                  <div style={{ marginBottom: 16 }}>
+                  <div className="custom-color-picker" style={{ marginBottom: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <label style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>V</label>
                       <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace' }}>{Math.round(v)}%</span>
@@ -1149,6 +1157,603 @@ export default function App() {
                 fontWeight: 600,
                 cursor: 'pointer',
                 transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Gradient Color Editor Modal - Dual Picker */}
+      {gradientEditor && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => setGradientEditor(null)}
+        >
+          <div
+            className="custom-color-picker"
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              padding: 24,
+              minWidth: 700,
+              maxWidth: '90vw',
+              border: '1px solid #333',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Gradient Editor</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={gradientEditor.manualMode}
+                  onChange={(e) => {
+                    const isManual = e.target.checked;
+                    setGradientManualEnd(isManual);
+                    setGradientEditor({ ...gradientEditor, manualMode: isManual });
+                    
+                    // If switching to manual mode, set the gradient end color to the current end color
+                    if (isManual) {
+                      const hsvToHex = (h, s, v) => {
+                        s /= 100;
+                        v /= 100;
+                        const c = v * s;
+                        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+                        const m = v - c;
+                        let r = 0, g = 0, b = 0;
+                        if (h < 60) { r = c; g = x; b = 0; }
+                        else if (h < 120) { r = x; g = c; b = 0; }
+                        else if (h < 180) { r = 0; g = c; b = x; }
+                        else if (h < 240) { r = 0; g = x; b = c; }
+                        else if (h < 300) { r = x; g = 0; b = c; }
+                        else { r = c; g = 0; b = x; }
+                        const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+                        return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+                      };
+                      setGradientEndColor(hsvToHex(gradientEditor.endH, gradientEditor.endS, gradientEditor.endV));
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>Manual End Color</span>
+              </label>
+            </div>
+
+            {/* Gradient Preview with Steps Selector */}
+            {(() => {
+              const hsvToHex = (h, s, v) => {
+                s /= 100;
+                v /= 100;
+                const c = v * s;
+                const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+                const m = v - c;
+                let r = 0, g = 0, b = 0;
+                if (h < 60) { r = c; g = x; b = 0; }
+                else if (h < 120) { r = x; g = c; b = 0; }
+                else if (h < 180) { r = 0; g = c; b = x; }
+                else if (h < 240) { r = 0; g = x; b = c; }
+                else if (h < 300) { r = x; g = 0; b = c; }
+                else { r = c; g = 0; b = x; }
+                const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+                return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+              };
+
+              const startColor = hsvToHex(gradientEditor.startH, gradientEditor.startS, gradientEditor.startV);
+              const endColor = hsvToHex(gradientEditor.endH, gradientEditor.endS, gradientEditor.endV);
+              
+              // Generate gradient colors based on selected steps
+              const activeSteps = gradientSteps;
+              const totalPreviewBlocks = 8;
+              const gradientColors = [];
+              
+              for (let i = 0; i < activeSteps; i++) {
+                const t = i / (activeSteps - 1);
+                const r1 = parseInt(startColor.slice(1, 3), 16);
+                const g1 = parseInt(startColor.slice(3, 5), 16);
+                const b1 = parseInt(startColor.slice(5, 7), 16);
+                const r2 = parseInt(endColor.slice(1, 3), 16);
+                const g2 = parseInt(endColor.slice(3, 5), 16);
+                const b2 = parseInt(endColor.slice(5, 7), 16);
+                const r = Math.round(r1 + (r2 - r1) * t);
+                const g = Math.round(g1 + (g2 - g1) * t);
+                const b = Math.round(b1 + (b2 - b1) * t);
+                gradientColors.push(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase());
+              }
+
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#aaa' }}>Preview</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Steps:</span>
+                      <button 
+                        onClick={() => setGradientSteps(4)} 
+                        style={{ 
+                          background: gradientSteps === 4 ? '#4a9eff' : '#2b2b2b', 
+                          color: gradientSteps === 4 ? '#fff' : '#ddd', 
+                          border: '1px solid #444', 
+                          borderRadius: 4, 
+                          padding: '3px 10px', 
+                          fontSize: 11, 
+                          cursor: 'pointer', 
+                          fontWeight: 600, 
+                          transition: 'all 0.15s' 
+                        }}
+                      >
+                        4
+                      </button>
+                      <button 
+                        onClick={() => setGradientSteps(8)} 
+                        style={{ 
+                          background: gradientSteps === 8 ? '#4a9eff' : '#2b2b2b', 
+                          color: gradientSteps === 8 ? '#fff' : '#ddd', 
+                          border: '1px solid #444', 
+                          borderRadius: 4, 
+                          padding: '3px 10px', 
+                          fontSize: 11, 
+                          cursor: 'pointer', 
+                          fontWeight: 600, 
+                          transition: 'all 0.15s' 
+                        }}
+                      >
+                        8
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, height: 32, borderRadius: 6, overflow: 'hidden', border: '1px solid #444' }}>
+                    {Array.from({ length: totalPreviewBlocks }).map((_, i) => {
+                      const isActive = i < activeSteps;
+                      const color = isActive ? gradientColors[i] : '#1a1a1a';
+                      return (
+                        <div 
+                          key={i} 
+                          style={{ 
+                            background: color,
+                            opacity: isActive ? 1 : 0.3,
+                            border: isActive ? 'none' : '1px dashed #444'
+                          }} 
+                          title={isActive ? color : 'Inactive'}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+              {/* Start Color Picker */}
+              {(() => {
+                const hsvToHex = (h, s, v) => {
+                  s /= 100;
+                  v /= 100;
+                  const c = v * s;
+                  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+                  const m = v - c;
+                  let r = 0, g = 0, b = 0;
+                  if (h < 60) { r = c; g = x; b = 0; }
+                  else if (h < 120) { r = x; g = c; b = 0; }
+                  else if (h < 180) { r = 0; g = c; b = x; }
+                  else if (h < 240) { r = 0; g = x; b = c; }
+                  else if (h < 300) { r = x; g = 0; b = c; }
+                  else { r = c; g = 0; b = x; }
+                  const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+                  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+                };
+
+                const { startH, startS, startV, endH, endS, endV } = gradientEditor;
+                const startColor = hsvToHex(startH, startS, startV);
+                const endColor = hsvToHex(endH, endS, endV);
+
+                const updateStart = (newH, newS, newV) => {
+                  const newColor = hsvToHex(newH, newS, newV);
+                  setGradientStart(newColor);
+                  
+                  // If in auto mode, update end color based on the new start color
+                  if (!gradientEditor.manualMode) {
+                    // Recalculate end color from the new start color
+                    const previewStart = setSaturation(newColor, gradientSaturation);
+                    const autoEndColor = lighten(previewStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+                    const endHSV = (() => {
+                      const r = parseInt(autoEndColor.slice(1, 3), 16) / 255;
+                      const g = parseInt(autoEndColor.slice(3, 5), 16) / 255;
+                      const b = parseInt(autoEndColor.slice(5, 7), 16) / 255;
+                      const max = Math.max(r, g, b);
+                      const min = Math.min(r, g, b);
+                      const delta = max - min;
+                      let h = 0;
+                      if (delta !== 0) {
+                        if (max === r) h = ((g - b) / delta) % 6;
+                        else if (max === g) h = (b - r) / delta + 2;
+                        else h = (r - g) / delta + 4;
+                        h *= 60;
+                        if (h < 0) h += 360;
+                      }
+                      const s = max === 0 ? 0 : (delta / max) * 100;
+                      const v = max * 100;
+                      return { h, s, v };
+                    })();
+                    setGradientEditor({ ...gradientEditor, startH: newH, startS: newS, startV: newV, endH: endHSV.h, endS: endHSV.s, endV: endHSV.v });
+                  } else {
+                    setGradientEditor({ ...gradientEditor, startH: newH, startS: newS, startV: newV });
+                  }
+                };
+
+                const updateEnd = (newH, newS, newV) => {
+                  const newColor = hsvToHex(newH, newS, newV);
+                  setGradientEndColor(newColor);
+                  setGradientEditor({ ...gradientEditor, endH: newH, endS: newS, endV: newV });
+                };
+
+                return (
+                  <>
+                    {/* Start Color Section */}
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 12 }}>Start Color</div>
+                      
+                      {/* SV Picker */}
+                      <div
+                        className="custom-color-picker"
+                        style={{
+                          width: '100%',
+                          height: 180,
+                          borderRadius: 8,
+                          position: 'relative',
+                          background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${startH}, 100%, 50%))`,
+                          cursor: 'crosshair',
+                          marginBottom: 12,
+                          border: '2px solid #333'
+                        }}
+                        onMouseDown={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const updateFromMouse = (clientX, clientY) => {
+                            const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                            const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+                            const newS = x * 100;
+                            const newV = (1 - y) * 100;
+                            updateStart(startH, newS, newV);
+                          };
+                          updateFromMouse(e.clientX, e.clientY);
+                          
+                          const onMove = (e) => updateFromMouse(e.clientX, e.clientY);
+                          const onUp = () => {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                          };
+                          document.addEventListener('mousemove', onMove);
+                          document.addEventListener('mouseup', onUp);
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${startS}%`,
+                            top: `${100 - startV}%`,
+                            width: 18,
+                            height: 18,
+                            border: '3px solid white',
+                            borderRadius: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            pointerEvents: 'none',
+                            boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+                          }}
+                        />
+                      </div>
+
+                      {/* H Slider */}
+                      <div className="custom-color-picker" style={{ marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <label style={{ color: '#aaa', fontSize: 11, fontWeight: 600 }}>H</label>
+                          <span style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>{Math.round(startH)}°</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={startH}
+                          onChange={(e) => updateStart(parseFloat(e.target.value), startS, startV)}
+                          style={{
+                            width: '100%',
+                            height: 24,
+                            borderRadius: 6,
+                            background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+                            border: '2px solid #333',
+                            appearance: 'none',
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+
+                      {/* S Slider */}
+                      <div className="custom-color-picker" style={{ marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <label style={{ color: '#aaa', fontSize: 11, fontWeight: 600 }}>S</label>
+                          <span style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>{Math.round(startS)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={startS}
+                          onChange={(e) => updateStart(startH, parseFloat(e.target.value), startV)}
+                          style={{
+                            width: '100%',
+                            height: 24,
+                            borderRadius: 6,
+                            background: `linear-gradient(to right, hsl(${startH}, 0%, ${startV / 2}%), hsl(${startH}, 100%, 50%))`,
+                            border: '2px solid #333',
+                            appearance: 'none',
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+
+                      {/* V Slider */}
+                      <div className="custom-color-picker" style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <label style={{ color: '#aaa', fontSize: 11, fontWeight: 600 }}>V</label>
+                          <span style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>{Math.round(startV)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={startV}
+                          onChange={(e) => updateStart(startH, startS, parseFloat(e.target.value))}
+                          style={{
+                            width: '100%',
+                            height: 24,
+                            borderRadius: 6,
+                            background: `linear-gradient(to right, #000, hsl(${startH}, ${startS}%, 50%))`,
+                            border: '2px solid #333',
+                            appearance: 'none',
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+
+                      {/* Color Preview and Name */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <div
+                            style={{
+                              width: 50,
+                              height: 50,
+                              borderRadius: 8,
+                              background: startColor,
+                              border: '2px solid #333',
+                              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
+                              flexShrink: 0
+                            }}
+                          />
+                          <div style={{ flex: 1, fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: '#fff', textAlign: 'center' }}>
+                            {startColor}
+                          </div>
+                        </div>
+                        <div style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#888',
+                          textAlign: 'center',
+                          padding: '6px 10px',
+                          background: '#252525',
+                          border: '1px solid #444',
+                          borderRadius: 6
+                        }}>
+                          {getColorName(startColor)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* End Color Section */}
+                    <div style={{ opacity: gradientEditor.manualMode ? 1 : 0.5, pointerEvents: gradientEditor.manualMode ? 'auto' : 'none' }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 12 }}>
+                        End Color {!gradientEditor.manualMode && <span style={{ fontSize: 11, color: '#888' }}>(auto)</span>}
+                      </div>
+                      
+                      {/* SV Picker */}
+                      <div
+                        className="custom-color-picker"
+                        style={{
+                          width: '100%',
+                          height: 180,
+                          borderRadius: 8,
+                          position: 'relative',
+                          background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${endH}, 100%, 50%))`,
+                          cursor: gradientEditor.manualMode ? 'crosshair' : 'not-allowed',
+                          marginBottom: 12,
+                          border: '2px solid #333'
+                        }}
+                        onMouseDown={(e) => {
+                          if (!gradientEditor.manualMode) return;
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const updateFromMouse = (clientX, clientY) => {
+                            const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                            const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+                            const newS = x * 100;
+                            const newV = (1 - y) * 100;
+                            updateEnd(endH, newS, newV);
+                          };
+                          updateFromMouse(e.clientX, e.clientY);
+                          
+                          const onMove = (e) => updateFromMouse(e.clientX, e.clientY);
+                          const onUp = () => {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                          };
+                          document.addEventListener('mousemove', onMove);
+                          document.addEventListener('mouseup', onUp);
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: `${endS}%`,
+                            top: `${100 - endV}%`,
+                            width: 18,
+                            height: 18,
+                            border: '3px solid white',
+                            borderRadius: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            pointerEvents: 'none',
+                            boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+                          }}
+                        />
+                      </div>
+
+                      {/* H Slider */}
+                      <div className="custom-color-picker" style={{ marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <label style={{ color: '#aaa', fontSize: 11, fontWeight: 600 }}>H</label>
+                          <span style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>{Math.round(endH)}°</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={endH}
+                          onChange={(e) => updateEnd(parseFloat(e.target.value), endS, endV)}
+                          disabled={!gradientEditor.manualMode}
+                          style={{
+                            width: '100%',
+                            height: 24,
+                            borderRadius: 6,
+                            background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+                            border: '2px solid #333',
+                            appearance: 'none',
+                            cursor: gradientEditor.manualMode ? 'pointer' : 'not-allowed',
+                            outline: 'none',
+                            opacity: gradientEditor.manualMode ? 1 : 0.5
+                          }}
+                        />
+                      </div>
+
+                      {/* S Slider */}
+                      <div className="custom-color-picker" style={{ marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <label style={{ color: '#aaa', fontSize: 11, fontWeight: 600 }}>S</label>
+                          <span style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>{Math.round(endS)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={endS}
+                          onChange={(e) => updateEnd(endH, parseFloat(e.target.value), endV)}
+                          disabled={!gradientEditor.manualMode}
+                          style={{
+                            width: '100%',
+                            height: 24,
+                            borderRadius: 6,
+                            background: `linear-gradient(to right, hsl(${endH}, 0%, ${endV / 2}%), hsl(${endH}, 100%, 50%))`,
+                            border: '2px solid #333',
+                            appearance: 'none',
+                            cursor: gradientEditor.manualMode ? 'pointer' : 'not-allowed',
+                            outline: 'none',
+                            opacity: gradientEditor.manualMode ? 1 : 0.5
+                          }}
+                        />
+                      </div>
+
+                      {/* V Slider */}
+                      <div className="custom-color-picker" style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <label style={{ color: '#aaa', fontSize: 11, fontWeight: 600 }}>V</label>
+                          <span style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>{Math.round(endV)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={endV}
+                          onChange={(e) => updateEnd(endH, endS, parseFloat(e.target.value))}
+                          disabled={!gradientEditor.manualMode}
+                          style={{
+                            width: '100%',
+                            height: 24,
+                            borderRadius: 6,
+                            background: `linear-gradient(to right, #000, hsl(${endH}, ${endS}%, 50%))`,
+                            border: '2px solid #333',
+                            appearance: 'none',
+                            cursor: gradientEditor.manualMode ? 'pointer' : 'not-allowed',
+                            outline: 'none',
+                            opacity: gradientEditor.manualMode ? 1 : 0.5
+                          }}
+                        />
+                      </div>
+
+                      {/* Color Preview and Name */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <div
+                            style={{
+                              width: 50,
+                              height: 50,
+                              borderRadius: 8,
+                              background: endColor,
+                              border: '2px solid #333',
+                              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
+                              flexShrink: 0
+                            }}
+                          />
+                          <div style={{ flex: 1, fontSize: 13, fontFamily: 'monospace', fontWeight: 600, color: '#fff', textAlign: 'center' }}>
+                            {endColor}
+                          </div>
+                        </div>
+                        <div style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#888',
+                          textAlign: 'center',
+                          padding: '6px 10px',
+                          background: '#252525',
+                          border: '1px solid #444',
+                          borderRadius: 6
+                        }}>
+                          {getColorName(endColor)}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Done Button */}
+            <button
+              onClick={() => setGradientEditor(null)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: '#2a2a2a',
+                border: '1px solid #444',
+                borderRadius: 8,
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                marginTop: 24
               }}
               onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
               onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
@@ -1294,26 +1899,39 @@ export default function App() {
                       cursor: 'pointer'
                     }}
                     onClick={() => {
-                      // Calculate HSV from hex
-                      const r = parseInt(gradientStart.slice(1, 3), 16) / 255;
-                      const g = parseInt(gradientStart.slice(3, 5), 16) / 255;
-                      const b = parseInt(gradientStart.slice(5, 7), 16) / 255;
-                      const max = Math.max(r, g, b);
-                      const min = Math.min(r, g, b);
-                      const delta = max - min;
-                      let h = 0;
-                      if (delta !== 0) {
-                        if (max === r) h = ((g - b) / delta) % 6;
-                        else if (max === g) h = (b - r) / delta + 2;
-                        else h = (r - g) / delta + 4;
-                        h *= 60;
-                        if (h < 0) h += 360;
-                      }
-                      const s = max === 0 ? 0 : (delta / max) * 100;
-                      const v = max * 100;
-                      setColorEditor({ id: 'gradient-start', color: gradientStart, h, s, v });
+                      // Open gradient editor with both start and end colors
+                      const hexToHSV = (hex) => {
+                        const r = parseInt(hex.slice(1, 3), 16) / 255;
+                        const g = parseInt(hex.slice(3, 5), 16) / 255;
+                        const b = parseInt(hex.slice(5, 7), 16) / 255;
+                        const max = Math.max(r, g, b);
+                        const min = Math.min(r, g, b);
+                        const delta = max - min;
+                        let h = 0;
+                        if (delta !== 0) {
+                          if (max === r) h = ((g - b) / delta) % 6;
+                          else if (max === g) h = (b - r) / delta + 2;
+                          else h = (r - g) / delta + 4;
+                          h *= 60;
+                          if (h < 0) h += 360;
+                        }
+                        const s = max === 0 ? 0 : (delta / max) * 100;
+                        const v = max * 100;
+                        return { h, s, v };
+                      };
+                      const startHSV = hexToHSV(gradientStart);
+                      const endHSV = hexToHSV(computedGradientEnd);
+                      setGradientEditor({
+                        startH: startHSV.h,
+                        startS: startHSV.s,
+                        startV: startHSV.v,
+                        endH: endHSV.h,
+                        endS: endHSV.s,
+                        endV: endHSV.v,
+                        manualMode: gradientManualEnd
+                      });
                     }}
-                    title="Click to change color"
+                    title="Click to edit gradient colors"
                   />
                   <div 
                     contentEditable
@@ -1352,7 +1970,51 @@ export default function App() {
               
               {/* End */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ color: '#aaa', fontSize: 13, fontWeight: 600 }}>End <span style={{ fontSize: 11, color: '#777' }}>(auto)</span></label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ color: '#aaa', fontSize: 13, fontWeight: 600 }}>
+                    End <span style={{ fontSize: 11, color: gradientManualEnd ? '#4a9eff' : '#777' }}>({gradientManualEnd ? 'manual' : 'auto'})</span>
+                  </label>
+                  {/* Toggle Switch */}
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: 6 }}>
+                    <span style={{ fontSize: 10, color: '#888', fontWeight: 600 }}>Auto</span>
+                    <div
+                      onClick={() => {
+                        const newManual = !gradientManualEnd;
+                        setGradientManualEnd(newManual);
+                        if (!newManual) {
+                          // Switching back to auto - recalculate end color
+                          const previewStart = setSaturation(gradientStart, gradientSaturation);
+                          const autoEnd = lighten(previewStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+                          setGradientEndColor(autoEnd);
+                        }
+                      }}
+                      style={{
+                        width: 32,
+                        height: 16,
+                        borderRadius: 8,
+                        background: gradientManualEnd ? '#4a9eff' : '#444',
+                        position: 'relative',
+                        transition: 'background 0.2s',
+                        border: '1px solid #333'
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          background: '#fff',
+                          position: 'absolute',
+                          top: 1,
+                          left: gradientManualEnd ? 17 : 1,
+                          transition: 'left 0.2s',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                        }}
+                      />
+                    </div>
+                    <span style={{ fontSize: 10, color: '#888', fontWeight: 600 }}>Manual</span>
+                  </label>
+                </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <div 
                     style={{ 
@@ -1517,7 +2179,7 @@ export default function App() {
               </div>
               <div>
                 <span style={{ marginRight: 6 }}>✨</span>
-                <strong>Row Reorder:</strong> Hold Shift while dragging a swatch handle (≡) to move the entire row!
+                <strong>Row Reorder:</strong> Drag the row handle (⋮⋮) to move rows up or down!
               </div>
             </div>
             
@@ -1589,11 +2251,10 @@ export default function App() {
                         for (let start = 0; start < colors.length; start += columns) {
                           const end = Math.min(start + columns, colors.length);
                           const rowIndex = Math.floor(start / columns);
-                          rows.push({ start, end, rowId: `row-${rowIndex}`, rowIndex });
-                        }
-                        
-                        return rows.map((r) => (
-                          <DraggableRow key={r.rowId} rowId={r.rowId} rowIndex={r.rowIndex}>
+                          const rowColors = colors.slice(start, end);
+                          
+                          // Build content for ghost display
+                          const content = (
                             <div 
                               className="row-grid" 
                               style={{ 
@@ -1602,7 +2263,38 @@ export default function App() {
                                 gap: 8,
                               }}
                             >
-                              {colors.slice(r.start, r.end).map((c) => {
+                              {rowColors.map((c) => (
+                                <div
+                                  key={c.id}
+                                  style={{
+                                    aspectRatio: '1',
+                                    background: c.color,
+                                    borderRadius: 8,
+                                    border: '2px solid #444',
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          );
+                          
+                          rows.push({ start, end, rowId: `row-${rowIndex}`, rowIndex, content, colors: rowColors });
+                        }
+                        
+                        return rows.map((r) => (
+                          <DraggableRow 
+                            key={r.rowId} 
+                            rowId={r.rowId} 
+                            rowIndex={r.rowIndex}
+                          >
+                            <div 
+                              className="row-grid" 
+                              style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, 
+                                gap: 8,
+                              }}
+                            >
+                              {r.colors.map((c) => {
                                 return (
                                   <SwatchDisplay
                                     key={c.id}

@@ -371,3 +371,15 @@ main .color-grid {
   width: 20px !important;
   height: 20px !important;
 }
+
+/* Prevent text selection when using color pickers */
+.custom-color-picker,
+.custom-color-picker *,
+.react-colorful,
+.react-colorful * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+}
+
