@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import { saveAs } from 'file-saver';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { DndProvider, useDrag, useDrop } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 
@@ -125,38 +127,102 @@ function isAchromatic(hex) {
   return r === g && g === b;
 }
 
-function generateGradientSaturation(start, end, steps, sat) {
-  // start/end: #RRGGBB, steps: int, sat: 0-1
-  if (isAchromatic(start)) {
-    // For greyscale, interpolate only lightness, keep hue=0, sat=0
-    const [, , l1] = hexToHsl(start);
-    const [, , l2] = hexToHsl(end);
-    return Array.from({ length: steps }, (_, i) => {
-      const t = steps === 1 ? 0 : i / (steps - 1);
-      const l = l1 + (l2 - l1) * t;
-      return hslToHex(0, 0, l);
-    });
-  } else {
-    const [h1, , l1] = hexToHsl(start);
-    const [h2, , l2] = hexToHsl(end);
-    return Array.from({ length: steps }, (_, i) => {
-      const t = steps === 1 ? 0 : i / (steps - 1);
-      let h = h1 + (h2 - h1) * t;
-      let l = l1 + (l2 - l1) * t;
-      return hslToHex(h, sat, l);
-    });
-  }
-}
-
-// Helper: apply saturation to a hex color (returns hex)
-function setSaturation(hex, sat) {
-  let [h, , l] = hexToHsl(hex);
-  return hslToHex(h, sat, l);
-}
-
 // Swatch component for sortable grid
 // Simplified swatch component - no longer needs drag logic for individual swatches
-function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, selected }) {
+// React-DND Swatch for grid-based dragging
+function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected, moveColor, setDraggingItemId, onDragEnd }) {
+  const ref = useRef(null);
+  const lastMoveTime = useRef(0);
+  
+  const [{ isDragging }, drag] = useDrag(() => ({
+    type: 'SWATCH_GRID',
+    item: () => {
+      setDraggingItemId(id);
+      return { id, index };
+    },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+    end: () => {
+      onDragEnd();
+    },
+  }), [id, index, setDraggingItemId, onDragEnd]);
+
+  const [, drop] = useDrop({
+    accept: 'SWATCH_GRID',
+    hover(item) {
+      if (!ref.current) return;
+      const dragIndex = item.index;
+      const hoverIndex = index;
+      if (dragIndex === hoverIndex) return;
+      
+      // Throttle to 60fps max for smoother animation
+      const now = Date.now();
+      if (now - lastMoveTime.current < 16) return;
+      lastMoveTime.current = now;
+      
+      moveColor(dragIndex, hoverIndex);
+      item.index = hoverIndex;
+    },
+  });
+
+  drag(drop(ref));
+
+  return (
+    <div 
+      ref={ref} 
+      style={{ 
+        opacity: isDragging ? 0.4 : 1,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        position: 'relative',
+      }}
+    >
+      <SwatchDisplay
+        id={id}
+        color={color}
+        onRemove={onRemove}
+        onCopy={onCopy}
+        copied={copied}
+        onSwatchClick={onSwatchClick}
+        selected={selected}
+        isDragging={isDragging}
+      />
+    </div>
+  );
+}
+
+// Hello-Pangea DND Swatch (kept for compatibility if needed)
+function DraggableSwatch({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected }) {
+  return (
+    <Draggable draggableId={id} index={index} type="SWATCH">
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          style={{
+            ...provided.draggableProps.style,
+          }}
+        >
+          <SwatchDisplay
+            id={id}
+            color={color}
+            onRemove={onRemove}
+            onCopy={onCopy}
+            copied={copied}
+            onSwatchClick={onSwatchClick}
+            selected={selected}
+            isDragging={snapshot.isDragging}
+          />
+        </div>
+      )}
+    </Draggable>
+  );
+}
+
+function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, selected, isDragging }) {
+  const [isHovered, setIsHovered] = useState(false);
+  
   return (
     <div
       className="sortable-item"
@@ -169,6 +235,7 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
         position: 'relative',
         outline: selected ? '2px solid #ff4d4d' : 'none',
         outlineOffset: selected ? 0 : 0,
+        pointerEvents: isDragging ? 'none' : 'auto',
       }}
       tabIndex={0}
       aria-label={`Color swatch ${color}`}
@@ -177,7 +244,9 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
           onSwatchClick(id, e);
         }
       }}
-      onClick={e => onSwatchClick(id, e)}
+      onDoubleClick={e => onSwatchClick(id, e)}
+      onMouseEnter={() => !isDragging && setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       <div
         style={{
@@ -185,18 +254,19 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
           aspectRatio: '1',
           background: color,
           borderRadius: 8,
-          border: '2px solid #222',
+          border: isHovered && !isDragging ? '2px solid #4a9eff' : '2px solid #222',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
-          boxShadow: '0 1px 6px #0006',
-          cursor: 'pointer',
-          transition: 'box-shadow 0.2s, border 0.2s',
+          boxShadow: isHovered && !isDragging ? '0 4px 12px #0009' : '0 1px 6px #0006',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          transition: isDragging ? 'none' : 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
+          transform: isHovered && !isDragging ? 'scale(1.05)' : 'scale(1)',
         }}
-        title="Click to edit color"
+        title="Double-click to edit, click and hold to reorder"
       >
         {/* Delete button floating top-right */}
         <button
@@ -287,11 +357,11 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
 }
 
 // Row component using @hello-pangea/dnd's Draggable
-function DraggableRow({ rowIndex, rowId, children }) {
+// Row component with drag handle for row-level reordering
+function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, setCopiedIndex, copiedIndex, columns }) {
   return (
-    <Draggable draggableId={rowId} index={rowIndex}>
+    <Draggable draggableId={rowId} index={rowIndex} type="ROW">
       {(provided, snapshot) => {
-        // Build the style object, ensuring we don't add transitions to transform
         const style = {
           ...provided.draggableProps.style,
           marginBottom: 8,
@@ -300,7 +370,6 @@ function DraggableRow({ rowIndex, rowId, children }) {
           gap: 8,
         };
         
-        // Only add visual effects during drag - NO transparency
         if (snapshot.isDragging) {
           style.background = '#252525';
           style.borderRadius = '8px';
@@ -341,13 +410,30 @@ function DraggableRow({ rowIndex, rowId, children }) {
               e.currentTarget.style.background = '#2a2a2a';
               e.currentTarget.style.color = '#888';
             }}
-            title="Drag to reorder row"
+            title="Drag to reorder entire row"
           >
             ⋮⋮
           </div>
-          {/* Row content */}
-          <div style={{ flex: 1 }}>
-            {children}
+          {/* Row grid - NOT draggable individually when in row mode */}
+          <div style={{ 
+            flex: 1,
+            display: 'grid',
+            gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+            gap: 8,
+          }}>
+            {colors.map((c) => (
+              <SwatchDisplay
+                key={c.id}
+                id={c.id}
+                color={c.color}
+                onRemove={handleRemoveColor}
+                onCopy={setCopiedIndex}
+                copied={copiedIndex === c.id}
+                onSwatchClick={onSwatchClick}
+                selected={false}
+                isDragging={false}
+              />
+            ))}
           </div>
         </div>
         );
@@ -432,17 +518,45 @@ export default function App() {
   const [gradientEndPct, setGradientEndPct] = useState(60); // 0-100, default 60%
   const [gradientSteps, setGradientSteps] = useState(8);
   const [copiedIndex, setCopiedIndex] = useState(null);
-  const [gradientSaturation, setGradientSaturation] = useState(1.0); // New state for saturation
+  const [gradientSaturation, setGradientSaturation] = useState(1.0);
   const [editingSat, setEditingSat] = useState(false);
   const [editingEnd, setEditingEnd] = useState(false);
-  const [eyedropper, setEyedropper] = useState(null); // { targetId } or null
-  // focused swatch tracking removed (no longer needed)
-  const [presets, setPresets] = useState([]); // [{name, description, colors, colorCount}]
+  const [eyedropper, setEyedropper] = useState(null);
+  const [presets, setPresets] = useState([]);
   const [presetName, setPresetName] = useState('');
-  // Row-selection and grid columns tracking
   const [columns, setColumns] = useState(8);
+  const [dragMode, setDragMode] = useState('SWATCH'); // 'SWATCH' or 'ROW'
   const [showHelp, setShowHelp] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const gridRef = useRef(null);
+  
+  // Track currently dragging item to apply visual state
+  const [draggingItemId, setDraggingItemId] = useState(null);
+  
+  // Use ref to track the current order without triggering re-renders
+  const dragOrderRef = useRef(colors);
+  
+  // Update ref when colors change from other sources
+  useEffect(() => {
+    dragOrderRef.current = colors;
+  }, [colors]);
+  
+  // React-DND move callback for SWATCH mode (updates ref only during drag)
+  const moveColor = useCallback((dragIndex, hoverIndex) => {
+    const newColors = [...dragOrderRef.current];
+    const [draggedItem] = newColors.splice(dragIndex, 1);
+    newColors.splice(hoverIndex, 0, draggedItem);
+    dragOrderRef.current = newColors;
+    
+    // Only update state (trigger re-render) occasionally to show visual feedback
+    // But don't update too often to prevent performance issues
+  }, []);
+  
+  // Apply the final order when drag ends
+  const handleDragEnd = useCallback(() => {
+    setColors(dragOrderRef.current);
+    setDraggingItemId(null);
+  }, []);
   // Custom color editor state
   const [colorEditor, setColorEditor] = useState(null); // { id, color, h, s, v } or null
   // Gradient color picker state
@@ -598,10 +712,6 @@ export default function App() {
   };
 
   // Edit a color
-  const handleColorChange = (id, newHex) => {
-    pushHistory(colors.map(c => c.id === id ? { ...c, color: newHex.toUpperCase() } : c));
-  };
-
   // Remove a color
   const handleRemoveColor = (id, deleteRow = false) => {
     if (!deleteRow) {
@@ -628,17 +738,15 @@ export default function App() {
     pushHistory([...colors, { id: uuidv4(), color: '#000000' }]);
   };
 
-  // Compute start color with saturation for preview
-  const previewGradientStart = setSaturation(gradientStart, gradientSaturation);
-  // Compute end color based on previewed start color and percentage, clamped so 100% is not pure white
+  // Compute end color based on start color and percentage, clamped so 100% is not pure white
   const MAX_LIGHTEN = 0.7; // 0.7 = 70% toward white at 100%
   const computedGradientEnd = gradientManualEnd 
     ? gradientEndColor 
-    : lighten(previewGradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+    : lighten(gradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
 
-  // Handle drag end for reordering rows with @hello-pangea/dnd
+  // Handle drag end for reordering swatches with @hello-pangea/dnd
   const onDragEnd = (result) => {
-    const { source, destination } = result;
+    const { source, destination, type } = result;
     
     // Dropped outside the list
     if (!destination) return;
@@ -646,25 +754,33 @@ export default function App() {
     // No movement
     if (source.index === destination.index) return;
     
-    console.log('Row drag end - from:', source.index, 'to:', destination.index);
-    
-    // Reorganize the colors array by moving entire rows
-    const sourceRowStart = source.index * columns;
-    const sourceRowEnd = Math.min(sourceRowStart + columns, colors.length);
-    const rowColors = colors.slice(sourceRowStart, sourceRowEnd);
-    
-    // Remove from source
-    const newColors = [...colors];
-    newColors.splice(sourceRowStart, rowColors.length);
-    
-    // Insert at destination
-    const destRowStart = destination.index * columns;
-    newColors.splice(destRowStart, 0, ...rowColors);
-    
-    console.log('Moved row of', rowColors.length, 'colors from index', sourceRowStart, 'to', destRowStart);
-    
-    // Update immediately - pushHistory will handle the state update
-    pushHistory(newColors);
+    if (type === 'SWATCH') {
+      // Individual swatch drag
+      console.log('Swatch drag end - from:', source.index, 'to:', destination.index);
+      
+      const newColors = Array.from(colors);
+      const [removed] = newColors.splice(source.index, 1);
+      newColors.splice(destination.index, 0, removed);
+      
+      pushHistory(newColors);
+    } else if (type === 'ROW') {
+      // Row drag - move entire row
+      console.log('Row drag end - from:', source.index, 'to:', destination.index);
+      
+      const sourceRowStart = source.index * columns;
+      const sourceRowEnd = Math.min(sourceRowStart + columns, colors.length);
+      const rowColors = colors.slice(sourceRowStart, sourceRowEnd);
+      
+      // Remove from source
+      const newColors = [...colors];
+      newColors.splice(sourceRowStart, rowColors.length);
+      
+      // Insert at destination
+      const destRowStart = destination.index * columns;
+      newColors.splice(destRowStart, 0, ...rowColors);
+      
+      pushHistory(newColors);
+    }
   };
 
   // Helper: lighten a hex color by percent (0-1)
@@ -676,13 +792,22 @@ export default function App() {
 
   // Apply gradient to colors
   const handleApplyGradient = () => {
-    const grad = generateGradientSaturation(
-      previewGradientStart,
-      computedGradientEnd,
-      gradientSteps,
-      gradientSaturation
-    );
-    pushHistory([...colors, ...grad.map(hex => ({ id: uuidv4(), color: hex }))]);
+    // Use simple RGB interpolation matching the preview
+    const gradientColors = [];
+    for (let i = 0; i < gradientSteps; i++) {
+      const t = i / (gradientSteps - 1);
+      const r1 = parseInt(gradientStart.slice(1, 3), 16);
+      const g1 = parseInt(gradientStart.slice(3, 5), 16);
+      const b1 = parseInt(gradientStart.slice(5, 7), 16);
+      const r2 = parseInt(computedGradientEnd.slice(1, 3), 16);
+      const g2 = parseInt(computedGradientEnd.slice(3, 5), 16);
+      const b2 = parseInt(computedGradientEnd.slice(5, 7), 16);
+      const r = Math.round(r1 + (r2 - r1) * t);
+      const g = Math.round(g1 + (g2 - g1) * t);
+      const b = Math.round(b1 + (b2 - b1) * t);
+      gradientColors.push(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase());
+    }
+    pushHistory([...colors, ...gradientColors.map(hex => ({ id: uuidv4(), color: hex }))]);
   };
 
   // Swatch click handler for eyedropper
@@ -856,6 +981,165 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Header Toolbar */}
+      <header className="app-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Import XML */}
+          <button
+            onClick={() => setShowImportModal(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+          >
+            📥 Import XML
+          </button>
+
+          {/* Export XML */}
+          <button onClick={handleDownload} disabled={colors.length===0} style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
+          }}
+          onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
+          onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            📤 Export XML
+          </button>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
+
+          {/* Save JSON */}
+          <button 
+            onClick={() => {
+              if (presets.length === 0) {
+                alert('No presets to save');
+                return;
+              }
+              const json = JSON.stringify(presets, null, 2);
+              const blob = new Blob([json], { type: 'application/json' });
+              const date = new Date().toISOString().split('T')[0];
+              saveAs(blob, `cubase-presets_${date}.json`);
+            }}
+            disabled={!xmlDoc || presets.length === 0}
+            title={!xmlDoc ? 'Import XML first' : presets.length === 0 ? 'No presets to save' : 'Save all presets to JSON'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: (!xmlDoc || presets.length===0)?0.5:1, cursor: (!xmlDoc || presets.length===0)?'not-allowed':'pointer', transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (xmlDoc && presets.length > 0) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (xmlDoc && presets.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            💾 Save JSON
+          </button>
+
+          {/* Load JSON */}
+          <button
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.json';
+              input.onchange = async (e) => {
+                try {
+                  const file = e.target.files[0];
+                  const text = await file.text();
+                  const loaded = JSON.parse(text);
+                  setPresets(loaded);
+                  localStorage.setItem('cubase-color-presets', JSON.stringify(loaded));
+                  alert(`Loaded ${loaded.length} presets successfully!`);
+                } catch (err) {
+                  alert('Failed to load presets: ' + err.message);
+                }
+              };
+              input.click();
+            }}
+            disabled={!xmlDoc}
+            title={!xmlDoc ? 'Import XML first' : 'Load presets from JSON'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            📂 Load JSON
+          </button>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
+
+          {/* Create Backup */}
+          <button onClick={handleCreateBackup} disabled={!xmlDoc} style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', transition: 'background 0.15s'
+          }}
+          onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; }}
+          onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            🔒 Backup
+          </button>
+        </div>
+        <div className="header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Undo */}
+          <button
+            onClick={handleUndo}
+            disabled={history.length === 0}
+            aria-label="Undo"
+            title="Undo"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: history.length===0?0.5:1, cursor: history.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (history.length > 0) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (history.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            <svg width="14" height="14" fill="none" viewBox="0 0 20 20"><path d="M4 10h8a4 4 0 110 8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/><path d="M7 13l-3-3 3-3" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Undo
+          </button>
+
+          {/* Redo */}
+          <button
+            onClick={handleRedo}
+            disabled={future.length === 0}
+            aria-label="Redo"
+            title="Redo"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: future.length===0?0.5:1, cursor: future.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (future.length > 0) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (future.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            <svg width="14" height="14" fill="none" viewBox="0 0 20 20"><path d="M16 10H8a4 4 0 100 8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/><path d="M13 13l3-3-3-3" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Redo
+          </button>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
+
+          {/* Delete All */}
+          <button
+            onClick={handleDeleteAll}
+            disabled={colors.length === 0}
+            aria-label="Delete All Colors"
+            title="Delete All Colors"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#ff4d4d', border: '1px solid #ff4d4d', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', transition: 'all 0.15s'
+            }}
+            onMouseEnter={(e) => { 
+              if (colors.length > 0) {
+                e.currentTarget.style.background = '#ff4d4d';
+                e.currentTarget.style.color = '#fff';
+              }
+            }}
+            onMouseLeave={(e) => { 
+              if (colors.length > 0) {
+                e.currentTarget.style.background = '#2a2a2a';
+                e.currentTarget.style.color = '#ff4d4d';
+              }
+            }}
+          >
+            🗑️ Delete All
+          </button>
+
+        </div>
+      </header>
+
       {/* Custom Color Editor Modal with react-colorful */}
       {colorEditor && (
         <div
@@ -1369,8 +1653,7 @@ export default function App() {
                   // If in auto mode, update end color based on the new start color
                   if (!gradientEditor.manualMode) {
                     // Recalculate end color from the new start color
-                    const previewStart = setSaturation(newColor, gradientSaturation);
-                    const autoEndColor = lighten(previewStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+                    const autoEndColor = lighten(newColor, (gradientEndPct / 100) * MAX_LIGHTEN);
                     const endHSV = (() => {
                       const r = parseInt(autoEndColor.slice(1, 3), 16) / 255;
                       const g = parseInt(autoEndColor.slice(3, 5), 16) / 255;
@@ -1763,94 +2046,261 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Import XML Modal */}
+      {showImportModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => setShowImportModal(false)}
+        >
+          <div
+            className="custom-color-picker"
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              padding: 32,
+              minWidth: 500,
+              maxWidth: '90vw',
+              border: '1px solid #333',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 20, textAlign: 'center' }}>
+              📥 Import Defaults.xml
+            </div>
+
+            {/* Drop Zone */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.borderColor = '#4a9eff';
+                e.currentTarget.style.background = '#1e2530';
+              }}
+              onDragLeave={(e) => {
+                e.currentTarget.style.borderColor = '#444';
+                e.currentTarget.style.background = '#232323';
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.currentTarget.style.borderColor = '#444';
+                e.currentTarget.style.background = '#232323';
+                const file = e.dataTransfer.files[0];
+                if (file && file.name.endsWith('.xml')) {
+                  const syntheticEvent = { target: { files: [file] } };
+                  await handleFileUpload(syntheticEvent);
+                  setShowImportModal(false);
+                }
+              }}
+              style={{
+                border: '2px dashed #444',
+                borderRadius: 10,
+                padding: 40,
+                textAlign: 'center',
+                background: '#232323',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                marginBottom: 20
+              }}
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.xml';
+                input.onchange = async (e) => {
+                  await handleFileUpload(e);
+                  setShowImportModal(false);
+                };
+                input.click();
+              }}
+            >
+              <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
+              <div style={{ color: '#ddd', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+                Drop your Defaults.xml file here
+              </div>
+              <div style={{ color: '#888', fontSize: 13 }}>
+                or click to browse
+              </div>
+            </div>
+
+            {/* Path Info */}
+            <div style={{ 
+              background: '#2a2a2a',
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              padding: 16,
+              color: '#aaa',
+              fontSize: 12,
+              lineHeight: 1.6
+            }}>
+              <div style={{ color: '#fff', fontWeight: 600, marginBottom: 8 }}>📂 Default Location:</div>
+              <div style={{ fontFamily: 'monospace', color: '#4a9eff', marginBottom: 4 }}>
+                C:\Users\[YourName]\AppData\Roaming\Steinberg\Cubase [Version]\Presets\
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: '#666' }}>
+                💡 Make sure to create a backup before making changes!
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setShowImportModal(false)}
+              style={{
+                width: '100%',
+                marginTop: 20,
+                background: '#444',
+                border: 'none',
+                borderRadius: 8,
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: 14,
+                padding: '10px',
+                cursor: 'pointer',
+                transition: 'background 0.15s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#555'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#444'}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className="layout">
         {/* Left Sidebar */}
         <aside className="sidebar left" style={{ padding: 10, gap: 0 }}>
-          {/* Palette Actions Section */}
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', marginBottom: 6 }}>Palette Actions</div>
-            <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Colors: <b>{colors.length}</b></div>
-            {/* Import/Export/Donate removed: handled on right sidebar */}
-            <div style={{ display: 'flex', flexDirection: 'row', gap: 6, marginBottom: 6 }}>
-              <button
-                onClick={handleUndo}
-                disabled={history.length === 0}
-                aria-label="Undo"
-                style={{
-                  flex: 1,
-                  background: '#232323',
-                  border: '1px solid #333',
-                  borderRadius: 7,
-                  color: '#fff',
-                  fontWeight: 600,
-                  fontSize: 15,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  justifyContent: 'center',
-                  height: 38,
-                  boxShadow: '0 1px 4px #0002',
-                  outline: 'none',
-                  opacity: history.length === 0 ? 0.5 : 1,
-                  cursor: history.length === 0 ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.15s',
-                  padding: '0 10px',
-                }}
-                title="Undo"
-                tabIndex={0}
-              >
-                <svg width="16" height="16" fill="none" viewBox="0 0 20 20"><path d="M4 10h8a4 4 0 110 8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/><path d="M7 13l-3-3 3-3" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                <span style={{ fontSize: 15 }}>Undo</span>
-              </button>
-              <button
-                onClick={handleRedo}
-                disabled={future.length === 0}
-                aria-label="Redo"
-                style={{
-                  flex: 1,
-                  background: '#232323',
-                  border: '1px solid #333',
-                  borderRadius: 7,
-                  color: '#fff',
-                  fontWeight: 600,
-                  fontSize: 15,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  justifyContent: 'center',
-                  height: 38,
-                  boxShadow: '0 1px 4px #0002',
-                  outline: 'none',
-                  opacity: future.length === 0 ? 0.5 : 1,
-                  cursor: future.length === 0 ? 'not-allowed' : 'pointer',
-                  transition: 'background 0.15s',
-                  padding: '0 10px',
-                }}
-                title="Redo"
-                tabIndex={0}
-              >
-                <svg width="16" height="16" fill="none" viewBox="0 0 20 20"><path d="M16 10H8a4 4 0 100 8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/><path d="M13 13l3-3-3-3" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                <span style={{ fontSize: 15 }}>Redo</span>
-              </button>
-            </div>
-          </div>
-          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '6px 0 6px 0' }} />
+          {/* Add Color Button */}
+          <button 
+            onClick={handleAddColor}
+            disabled={!xmlDoc}
+            title={!xmlDoc ? 'Import XML first' : 'Add a new color'}
+            style={{
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: 8, 
+              width: '100%', 
+              background: !xmlDoc ? '#232323' : '#444', 
+              color: '#fff', 
+              border: !xmlDoc ? '1px solid #333' : 'none', 
+              borderRadius: 7, 
+              padding: '10px 14px', 
+              fontWeight: 700, 
+              fontSize: 15, 
+              cursor: !xmlDoc ? 'not-allowed' : 'pointer',
+              opacity: !xmlDoc ? 0.5 : 1,
+              marginBottom: 8,
+              boxShadow: '0 1px 4px #0002',
+              transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#555'; }}
+            onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#444'; }}
+          >
+            ➕ Add Color
+          </button>
+
+          {/* Drag Mode Toggle */}
+          <button 
+            onClick={() => setDragMode(dragMode === 'SWATCH' ? 'ROW' : 'SWATCH')}
+            disabled={!xmlDoc || colors.length === 0}
+            title={dragMode === 'SWATCH' ? 'Switch to Row Drag Mode' : 'Switch to Swatch Drag Mode'}
+            style={{
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: 8, 
+              width: '100%', 
+              background: (!xmlDoc || colors.length === 0) ? '#232323' : (dragMode === 'ROW' ? '#4a9eff' : '#444'), 
+              color: '#fff', 
+              border: (!xmlDoc || colors.length === 0) ? '1px solid #333' : 'none', 
+              borderRadius: 7, 
+              padding: '10px 14px', 
+              fontWeight: 700, 
+              fontSize: 13, 
+              cursor: (!xmlDoc || colors.length === 0) ? 'not-allowed' : 'pointer',
+              opacity: (!xmlDoc || colors.length === 0) ? 0.5 : 1,
+              marginBottom: 8,
+              boxShadow: '0 1px 4px #0002',
+              transition: 'all 0.15s'
+            }}
+            onMouseEnter={(e) => { 
+              if (xmlDoc && colors.length > 0) {
+                e.currentTarget.style.transform = 'scale(1.02)';
+              }
+            }}
+            onMouseLeave={(e) => { 
+              if (xmlDoc && colors.length > 0) {
+                e.currentTarget.style.transform = 'scale(1)';
+              }
+            }}
+          >
+            {dragMode === 'SWATCH' ? '⋮⋮ Row Mode' : '🔄 Swatch Mode'}
+          </button>
+
           {/* Round-Trip Test removed */}
           {/* Create Backup moved to right sidebar */}
-          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '6px 0 6px 0' }} />
           {/* Gradient Generator Section */}
-          <div style={{ background: '#232323', borderRadius: 10, padding: 12, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ background: '#232323', borderRadius: 10, padding: 12, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 8, opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto', position: 'relative' }}>
             <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', marginBottom: 4, letterSpacing: '-0.3px' }}>Gradient Generator</div>
+            {!xmlDoc && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(35, 35, 35, 0.8)', borderRadius: 10, zIndex: 1 }}>
+                <div style={{ color: '#ff4d4d', fontSize: 14, fontWeight: 600, textAlign: 'center', padding: 20 }}>📥 Import XML first</div>
+              </div>
+            )}
             
             {/* Live Gradient Preview */}
-            <div style={{
-              height: 32,
-              borderRadius: 6,
-              background: `linear-gradient(to right, ${generateGradientSaturation(previewGradientStart, computedGradientEnd, gradientSteps, gradientSaturation).join(', ')})`,
-              border: '1px solid #444',
-              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
-            }} title="Gradient preview" />
+            {(() => {
+              // Simple RGB interpolation matching the modal
+              const totalPreviewBlocks = 8;
+              const activeSteps = gradientSteps;
+              const gradientColors = [];
+              
+              for (let i = 0; i < activeSteps; i++) {
+                const t = i / (activeSteps - 1);
+                const r1 = parseInt(gradientStart.slice(1, 3), 16);
+                const g1 = parseInt(gradientStart.slice(3, 5), 16);
+                const b1 = parseInt(gradientStart.slice(5, 7), 16);
+                const r2 = parseInt(computedGradientEnd.slice(1, 3), 16);
+                const g2 = parseInt(computedGradientEnd.slice(3, 5), 16);
+                const b2 = parseInt(computedGradientEnd.slice(5, 7), 16);
+                const r = Math.round(r1 + (r2 - r1) * t);
+                const g = Math.round(g1 + (g2 - g1) * t);
+                const b = Math.round(b1 + (b2 - b1) * t);
+                gradientColors.push(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase());
+              }
+              
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, height: 32, borderRadius: 6, overflow: 'hidden', border: '1px solid #444' }}>
+                  {Array.from({ length: totalPreviewBlocks }).map((_, i) => {
+                    const isActive = i < activeSteps;
+                    const color = isActive ? gradientColors[i] : '#1a1a1a';
+                    return (
+                      <div 
+                        key={i} 
+                        style={{ 
+                          background: color,
+                          opacity: isActive ? 1 : 0.3,
+                          border: isActive ? 'none' : '1px dashed #444'
+                        }} 
+                        title={isActive ? color : 'Inactive'}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })()}
             
             {/* Steps control */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
@@ -1983,8 +2433,7 @@ export default function App() {
                         setGradientManualEnd(newManual);
                         if (!newManual) {
                           // Switching back to auto - recalculate end color
-                          const previewStart = setSaturation(gradientStart, gradientSaturation);
-                          const autoEnd = lighten(previewStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+                          const autoEnd = lighten(gradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
                           setGradientEndColor(autoEnd);
                         }
                       }}
@@ -2160,48 +2609,7 @@ export default function App() {
           </button>
           {error && <div style={{ color: '#ff4d4d', fontWeight: 600, fontSize: 15, marginTop: 8 }}>{error}</div>}
             {/* Tips (left bottom) */}
-            <div style={{
-              marginTop: 12,
-              background: '#2a2a2a',
-              borderRadius: 8,
-              border: '1px solid #3a3a3a',
-              padding: '10px 12px',
-              color: '#ddd',
-              fontSize: 12,
-              lineHeight: 1.5,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}>
-              <div>
-                <span style={{ marginRight: 6 }}>💡</span>
-                <strong>Tip:</strong> Use the eyedropper to add colors from anywhere on your screen.
-              </div>
-              <div>
-                <span style={{ marginRight: 6 }}>✨</span>
-                <strong>Row Reorder:</strong> Drag the row handle (⋮⋮) to move rows up or down!
-              </div>
-            </div>
-            
-            {/* Help Button */}
-            <button
-              onClick={() => setShowHelp(!showHelp)}
-              style={{
-                width: '100%',
-                background: '#232323',
-                border: '1px solid #333',
-                borderRadius: 7,
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: 14,
-                padding: '8px 12px',
-                cursor: 'pointer',
-                marginTop: 12,
-              }}
-            >
-              {showHelp ? '❌ Close Help' : '❓ Show Help'}
-            </button>
-  </aside>
+        </aside>
   {/* Main content */}
   <main className="main">
           {/* DnD context provider for sortable rows */}
@@ -2237,116 +2645,93 @@ export default function App() {
                     Import a Defaults.xml file or click "+ Add Color" to get started
                   </div>
                 </div>
+              ) : dragMode === 'ROW' ? (
+                // ROW MODE: Drag entire rows via handles
+                <div>
+                  <Droppable droppableId="palette-rows" type="ROW">
+                    {(rowProvided) => (
+                      <div
+                        ref={rowProvided.innerRef}
+                        {...rowProvided.droppableProps}
+                        style={{ width: '100%' }}
+                      >
+                        {(() => {
+                          const rows = [];
+                          for (let start = 0; start < colors.length; start += columns) {
+                            const end = Math.min(start + columns, colors.length);
+                            const rowIndex = Math.floor(start / columns);
+                            const rowColors = colors.slice(start, end);
+                            rows.push({ start, end, rowIndex, colors: rowColors });
+                          }
+                          
+                          return rows.map((row) => (
+                            <DraggableRow
+                              key={`row-${row.rowIndex}`}
+                              rowId={`row-${row.rowIndex}`}
+                              rowIndex={row.rowIndex}
+                              colors={row.colors}
+                              onSwatchClick={handleSwatchClick}
+                              handleRemoveColor={handleRemoveColor}
+                              setCopiedIndex={setCopiedIndex}
+                              copiedIndex={copiedIndex}
+                              columns={columns}
+                            />
+                          ));
+                        })()}
+                        {rowProvided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </div>
               ) : (
-                // Droppable list of rows
-                <Droppable droppableId="palette-rows" type="ROW">
-                  {(provided) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      style={{ width: '100%' }}
-                    >
-                      {(() => {
-                        const rows = [];
-                        for (let start = 0; start < colors.length; start += columns) {
-                          const end = Math.min(start + columns, colors.length);
-                          const rowIndex = Math.floor(start / columns);
-                          const rowColors = colors.slice(start, end);
-                          
-                          // Build content for ghost display
-                          const content = (
-                            <div 
-                              className="row-grid" 
-                              style={{ 
-                                display: 'grid', 
-                                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, 
-                                gap: 8,
-                              }}
-                            >
-                              {rowColors.map((c) => (
-                                <div
-                                  key={c.id}
-                                  style={{
-                                    aspectRatio: '1',
-                                    background: c.color,
-                                    borderRadius: 8,
-                                    border: '2px solid #444',
-                                  }}
-                                />
-                              ))}
-                            </div>
-                          );
-                          
-                          rows.push({ start, end, rowId: `row-${rowIndex}`, rowIndex, content, colors: rowColors });
-                        }
-                        
-                        return rows.map((r) => (
-                          <DraggableRow 
-                            key={r.rowId} 
-                            rowId={r.rowId} 
-                            rowIndex={r.rowIndex}
-                          >
-                            <div 
-                              className="row-grid" 
-                              style={{ 
-                                display: 'grid', 
-                                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, 
-                                gap: 8,
-                              }}
-                            >
-                              {r.colors.map((c) => {
-                                return (
-                                  <SwatchDisplay
-                                    key={c.id}
-                                    id={c.id}
-                                    color={c.color}
-                                    onColorChange={handleColorChange}
-                                    onRemove={handleRemoveColor}
-                                    onCopy={setCopiedIndex}
-                                    copied={copiedIndex === c.id}
-                                    onSwatchClick={handleSwatchClick}
-                                    selected={false}
-                                  />
-                                );
-                              })}
-                            </div>
-                          </DraggableRow>
-                        ));
-                      })()}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
+                // SWATCH MODE: Use react-dnd for proper grid-based dragging
+                <DndProvider backend={HTML5Backend}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(8, minmax(0, 1fr))',
+                      gap: 8,
+                      width: '100%',
+                    }}
+                  >
+                    {colors.map((c, index) => (
+                      <DraggableSwatchGrid
+                        key={c.id}
+                        id={c.id}
+                        index={index}
+                        color={c.color}
+                        onRemove={handleRemoveColor}
+                        onCopy={setCopiedIndex}
+                        copied={copiedIndex === c.id}
+                        onSwatchClick={handleSwatchClick}
+                        selected={false}
+                        moveColor={moveColor}
+                        draggingItemId={draggingItemId}
+                        setDraggingItemId={setDraggingItemId}
+                        onDragEnd={handleDragEnd}
+                      />
+                    ))}
+                  </div>
+                </DndProvider>
               )}
               </div>
           </DragDropContext>
         </main>
         {/* Right Sidebar: Presets Panel */}
-        <aside className="sidebar right" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Import & Export */}
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', marginBottom: 6 }}>Import & Export</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 12 }}>
-            <label htmlFor="right-import" style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#232323', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 13, width: '100%'
-            }}>
-              <span>Import</span>
-              <input id="right-import" type="file" accept=".xml" onChange={handleFileUpload} style={{ display: 'none' }} />
-            </label>
-            <button onClick={handleDownload} disabled={colors.length===0} style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#232323', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', width: '100%'
-            }}>Export</button>
-            <button onClick={handleCreateBackup} disabled={!xmlDoc} style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#232323', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', width: '100%'
-            }}>Create Backup</button>
-            <button onClick={handleAddColor} style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#444', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 13, cursor: 'pointer', width: '100%'
-            }}>+ Add Color</button>
-          </div>
-
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '6px 0 4px' }}>Palette Presets</div>
+        <aside className="sidebar right" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', marginBottom: 6 }}>Palette Presets</div>
           
+          {/* Disabled Overlay */}
+          {!xmlDoc && (
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(35, 35, 35, 0.8)', borderRadius: 8, zIndex: 10 }}>
+              <div style={{ color: '#ff4d4d', fontSize: 14, fontWeight: 600, textAlign: 'center', padding: 20 }}>
+                📥 Import XML first
+              </div>
+            </div>
+          )}
+
           {/* Save Preset Section */}
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 8, opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
             <input
               type="text"
               placeholder="Preset name..."
@@ -2355,7 +2740,7 @@ export default function App() {
               onKeyDown={e => {
                 if (e.key === 'Enter') handleSavePreset();
               }}
-              disabled={colors.length === 0}
+              disabled={!xmlDoc || colors.length === 0}
               style={{
                 width: '100%',
                 background: '#181818',
@@ -2371,7 +2756,7 @@ export default function App() {
             />
             <button
               onClick={handleSavePreset}
-              disabled={!presetName.trim() || colors.length === 0}
+              disabled={!xmlDoc || !presetName.trim() || colors.length === 0}
               style={{
                 width: '100%',
                 background: '#444',
@@ -2381,69 +2766,26 @@ export default function App() {
                 padding: '8px 12px',
                 fontSize: 14,
                 fontWeight: 600,
-                cursor: colors.length === 0 || !presetName.trim() ? 'not-allowed' : 'pointer',
-                opacity: colors.length === 0 || !presetName.trim() ? 0.5 : 1,
+                cursor: (!xmlDoc || colors.length === 0 || !presetName.trim()) ? 'not-allowed' : 'pointer',
+                opacity: (!xmlDoc || colors.length === 0 || !presetName.trim()) ? 0.5 : 1,
                 transition: 'background 0.15s',
               }}
             >
               Save
             </button>
-            {/* Load JSON placed directly below Save */}
-            <button
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.json';
-                input.onchange = async (e) => {
-                  try {
-                    const file = e.target.files[0];
-                    const text = await file.text();
-                    const loaded = JSON.parse(text);
-                    setPresets(loaded);
-                    localStorage.setItem('cubase-color-presets', JSON.stringify(loaded));
-                  } catch (err) {
-                    alert('Failed to load presets: ' + err.message);
-                  }
-                };
-                input.click();
-              }}
-              style={{
-                width: '100%',
-                background: '#232323',
-                color: '#fff',
-                border: '1px solid #333',
-                borderRadius: 7,
-                padding: '8px 12px',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                marginTop: 8,
-              }}
-            >
-              Load JSON
-            </button>
           </div>
-
-          <button
-            className="btn btn-danger"
-            onClick={handleDeleteAll}
-            disabled={colors.length === 0}
-            aria-label="Delete All Colors"
-            style={{ width: '100%', marginTop: 8 }}
-          >
-            Delete All
-          </button>
 
           <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '8px 0' }} />
 
           {/* Presets List */}
-          {presets.length === 0 ? (
-            <div style={{ color: '#888', fontSize: 13, textAlign: 'center', padding: '20px 10px', lineHeight: 1.5 }}>
-              No presets saved yet. Save your current palette to create your first preset!
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {presets.map(preset => (
+          <div style={{ opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
+            {presets.length === 0 ? (
+              <div style={{ color: '#888', fontSize: 13, textAlign: 'center', padding: '20px 10px', lineHeight: 1.5 }}>
+                No presets saved yet. Save your current palette to create your first preset!
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {presets.map(preset => (
                 <div
                   key={preset.id}
                   style={{
@@ -2513,19 +2855,20 @@ export default function App() {
                   </button>
                 </div>
               ))}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Controls Grid */}
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '12px 0 6px' }}>Controls</div>
-          <div className="btn-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
-            {/* Balance Palette moved to left sidebar */}
-            <button className="btn" onClick={handleReversePalette} disabled={colors.length < 2} title="Reverse order" aria-label="Reverse">Reverse</button>
-            <button className="btn" onClick={handleShufflePalette} disabled={colors.length < 2} title="Shuffle colors" aria-label="Shuffle">Shuffle</button>
-            <button className="btn" onClick={handleSortByHue} disabled={colors.length < 2} title="Sort by Hue" aria-label="Sort by Hue">Sort: Hue</button>
-            <button className="btn" onClick={handleSortBySaturation} disabled={colors.length < 2} title="Sort by Saturation" aria-label="Sort by Saturation">Sort: Sat</button>
-            <button className="btn" onClick={handleSortByLightness} disabled={colors.length < 2} title="Sort by Lightness" aria-label="Sort by Lightness">Sort: Light</button>
-            {/* Round-Trip Test removed */}
+            {/* Controls Grid */}
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '12px 0 6px' }}>Controls</div>
+            <div className="btn-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+              {/* Balance Palette moved to left sidebar */}
+              <button className="btn" onClick={handleReversePalette} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Reverse order'} aria-label="Reverse">Reverse</button>
+              <button className="btn" onClick={handleShufflePalette} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Shuffle colors'} aria-label="Shuffle">Shuffle</button>
+              <button className="btn" onClick={handleSortByHue} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Hue'} aria-label="Sort by Hue">Sort: Hue</button>
+              <button className="btn" onClick={handleSortBySaturation} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Saturation'} aria-label="Sort by Saturation">Sort: Sat</button>
+              <button className="btn" onClick={handleSortByLightness} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Lightness'} aria-label="Sort by Lightness">Sort: Light</button>
+              {/* Round-Trip Test removed */}
+            </div>
           </div>
 
           {/* Danger Zone removed here (Delete All placed near Save Preset) */}
@@ -2659,6 +3002,54 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="app-footer">
+        <span>Cubendo Colour Picker</span>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 16,
+          flex: 1,
+          justifyContent: 'center',
+          fontSize: 12,
+          color: '#aaa'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>💡</span>
+            <span><strong>Tip:</strong> Use the eyedropper to add colors from anywhere on your screen.</span>
+          </div>
+          <span style={{ color: '#444' }}>•</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>✨</span>
+            <span><strong>Row Reorder:</strong> Drag the row handle (⋮⋮) to move rows up or down!</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ color: '#bbb', fontSize: 13 }}>Colors: <b style={{ color: '#fff' }}>{colors.length}</b></span>
+          <span style={{ color: '#444' }}>|</span>
+          <span style={{ color: '#666', fontSize: 12 }}>v1.0</span>
+          <span style={{ color: '#444' }}>|</span>
+          <button
+            onClick={() => setShowHelp(!showHelp)}
+            style={{
+              background: '#2a2a2a',
+              border: '1px solid #333',
+              borderRadius: 6,
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: 12,
+              padding: '5px 10px',
+              cursor: 'pointer',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+          >
+            {showHelp ? '❌ Close Help' : '❓ Help'}
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }
