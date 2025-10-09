@@ -1,19 +1,64 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import { saveAs } from 'file-saver';
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { arrayMove, SortableContext, useSortable, rectSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { v4 as uuidv4 } from 'uuid';
+import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
+import { HexColorPicker } from 'react-colorful';
 
-function argbIntToHex(argb) {
-  let n = Number(argb) >>> 0;
-  let hex = (n & 0xFFFFFF).toString(16).toUpperCase();
-  return '#' + hex.padStart(6, '0');
-}
-function hexToArgbInt(hex) {
-  let rgb = parseInt(hex.replace('#', ''), 16);
-  return (0xFF000000 | rgb) >>> 0;
+// Helper: get color name from hex
+function getColorName(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  
+  // Convert to HSL for better color naming
+  const max = Math.max(r, g, b) / 255;
+  const min = Math.min(r, g, b) / 255;
+  const l = (max + min) / 2;
+  const d = max - min;
+  
+  if (d === 0) {
+    if (l > 0.95) return 'White';
+    if (l < 0.05) return 'Black';
+    return 'Gray';
+  }
+  
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  
+  let h = 0;
+  if (max === r / 255) h = ((g - b) / 255 / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g / 255) h = ((b - r) / 255 / d + 2) / 6;
+  else h = ((r - g) / 255 / d + 4) / 6;
+  h *= 360;
+  
+  // Lightness descriptors
+  let lightness = '';
+  if (l < 0.2) lightness = 'Very Dark ';
+  else if (l < 0.4) lightness = 'Dark ';
+  else if (l > 0.8) lightness = 'Light ';
+  else if (l > 0.9) lightness = 'Very Light ';
+  
+  // Saturation descriptors
+  let saturation = '';
+  if (s < 0.1) return lightness + 'Gray';
+  else if (s < 0.3) saturation = 'Grayish ';
+  else if (s > 0.9) saturation = 'Vivid ';
+  else if (s > 0.6) saturation = 'Bright ';
+  
+  // Hue names
+  let hue = '';
+  if (h < 15) hue = 'Red';
+  else if (h < 45) hue = 'Orange';
+  else if (h < 70) hue = 'Yellow';
+  else if (h < 150) hue = 'Green';
+  else if (h < 200) hue = 'Cyan';
+  else if (h < 250) hue = 'Blue';
+  else if (h < 310) hue = 'Purple';
+  else if (h < 340) hue = 'Magenta';
+  else hue = 'Red';
+  
+  return `${lightness}${saturation}${hue}`.trim();
 }
 
 // Helper: convert hex to HSL
@@ -111,30 +156,26 @@ function setSaturation(hex, sat) {
 }
 
 // Swatch component for sortable grid
-function SortableSwatch({ id, color, onColorChange, onRemove, onCopy, copied, onFocus, onBlur, onSwatchClick }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging: swatchDragging } = useSortable({ id });
+// Simplified swatch component - no longer needs drag logic for individual swatches
+function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, selected }) {
   return (
     <div
-      ref={setNodeRef}
+      className="sortable-item"
       style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        zIndex: swatchDragging ? 100 : 'auto',
-        filter: swatchDragging ? 'brightness(1.08) drop-shadow(0 2px 12px #0008)' : 'none',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'flex-start',
-        gap: 6,
+        gap: 4,
         position: 'relative',
+        outline: selected ? '2px solid #ff4d4d' : 'none',
+        outlineOffset: selected ? 0 : 0,
       }}
       tabIndex={0}
       aria-label={`Color swatch ${color}`}
-      onFocus={onFocus}
-      onBlur={onBlur}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') {
-          document.getElementById(`color-input-${id}`)?.click();
+          onSwatchClick(id, e);
         }
       }}
       onClick={e => onSwatchClick(id, e)}
@@ -144,39 +185,20 @@ function SortableSwatch({ id, color, onColorChange, onRemove, onCopy, copied, on
           width: '100%',
           aspectRatio: '1',
           background: color,
-          borderRadius: 16,
+          borderRadius: 8,
           border: '2px solid #222',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
-          boxShadow: '0 2px 8px #0007',
+          boxShadow: '0 1px 6px #0006',
           cursor: 'pointer',
-          transition: 'box-shadow 0.2s, border 0.2s, transform 0.15s',
+          transition: 'box-shadow 0.2s, border 0.2s',
           overflow: 'visible',
         }}
         title="Click to edit color"
-        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.06)'}
-        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
       >
-        <input
-          id={`color-input-${id}`}
-          type="color"
-          value={color}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            opacity: 0,
-            cursor: 'pointer',
-            zIndex: 20,
-          }}
-          onChange={e => onColorChange(id, e.target.value)}
-          tabIndex={-1}
-        />
         {/* Delete button floating top-right */}
         <button
           data-xbtn="1"
@@ -205,83 +227,53 @@ function SortableSwatch({ id, color, onColorChange, onRemove, onCopy, copied, on
             transition: 'opacity 0.15s',
             pointerEvents: 'auto',
           }}
-          onClick={e => { e.stopPropagation(); onRemove(id); }}
+          onClick={e => { e.stopPropagation(); onRemove(id, e.shiftKey); }}
           title="Remove color"
           onMouseEnter={e => e.currentTarget.style.opacity = '1'}
           onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
         >×</button>
-        {/* Drag handle button floating top-left - only here apply listeners/attributes */}
-        <button
-          data-dragbtn="1"
-          {...listeners}
-          {...attributes}
-          style={{
-            position: 'absolute',
-            top: 6,
-            left: 6,
-            fontSize: 15,
-            background: '#fff',
-            border: 'none',
-            cursor: 'grab',
-            borderRadius: '50%',
-            width: 22,
-            height: 22,
-            minWidth: 0,
-            minHeight: 0,
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 8px #0002',
-            color: '#888',
-            fontWeight: 900,
-            zIndex: 30,
-            opacity: 0.8,
-            transition: 'opacity 0.15s',
-            pointerEvents: 'auto',
-          }}
-          title="Drag to reorder"
-          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-          onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
-        >≡</button>
+        {/* No individual drag handle needed anymore - rows are dragged as a whole */}
         <div style={{
           position: 'absolute',
           inset: 0,
-          borderRadius: 16,
+          borderRadius: 8,
           boxShadow: 'inset 0 2px 8px #0004',
           pointerEvents: 'none',
         }} />
       </div>
-      {/* Hex code below, full width of swatch, no delete button here */}
+      {/* Hex code below the swatch, full width, square corners */}
       <span
         data-hex="1"
         style={{
-          color: '#222',
-          background: '#fffdeee0',
-          fontSize: 14,
-          borderRadius: 7,
-          padding: '3px 10px',
+          color: '#1a1a1a',
+          background: '#fffef9f0',
+          fontSize: 13,
+          borderRadius: 0,
+          padding: '3px 8px',
           fontWeight: 800,
-          letterSpacing: '1px',
-          boxShadow: '0 2px 8px #0002',
+          letterSpacing: '0.6px',
+          boxShadow: '0 1px 4px #0002',
           userSelect: 'all',
-          display: 'inline-block',
+          display: 'block',
           textAlign: 'center',
           cursor: 'pointer',
-          minWidth: 60,
-          maxWidth: 80,
           width: '100%',
-          marginTop: 0,
-          zIndex: 2,
-          overflow: 'hidden',
+          marginTop: 4,
           whiteSpace: 'nowrap',
           fontFamily: 'Fira Mono, monospace',
+          boxSizing: 'border-box',
         }}
         title="Click to copy color code"
         tabIndex={0}
         onMouseDown={e => {
           e.stopPropagation();
           onCopy(id);
+        }}
+        onClick={e => {
+          e.stopPropagation();
+        }}
+        onTouchStart={e => {
+          e.stopPropagation();
         }}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -292,6 +284,77 @@ function SortableSwatch({ id, color, onColorChange, onRemove, onCopy, copied, on
         {copied ? 'Copied!' : color}
       </span>
     </div>
+  );
+}
+
+// Row component using @hello-pangea/dnd's Draggable
+function DraggableRow({ rowIndex, rowId, children }) {
+  return (
+    <Draggable draggableId={rowId} index={rowIndex}>
+      {(provided, snapshot) => {
+        // Build the style object, ensuring we don't add transitions to transform
+        const style = {
+          ...provided.draggableProps.style,
+          marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        };
+        
+        // Only add visual effects during drag, not transform
+        if (snapshot.isDragging) {
+          style.opacity = 0.8;
+          style.background = '#252525';
+          style.borderRadius = '8px';
+          style.padding = '4px';
+          style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.5)';
+        }
+        
+        return (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          className={`sortable-row ${snapshot.isDragging ? 'dragging' : ''}`}
+          style={style}
+        >
+          {/* Drag handle button */}
+          <div
+            {...provided.dragHandleProps}
+            style={{
+              cursor: 'grab',
+              padding: '8px',
+              background: '#2a2a2a',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 16,
+              color: '#888',
+              fontWeight: 900,
+              userSelect: 'none',
+              flexShrink: 0,
+              transition: 'background 0.15s, color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#333';
+              e.currentTarget.style.color = '#fff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#2a2a2a';
+              e.currentTarget.style.color = '#888';
+            }}
+            title="Drag to reorder row"
+          >
+            ⋮⋮
+          </div>
+          {/* Row content */}
+          <div style={{ flex: 1 }}>
+            {children}
+          </div>
+        </div>
+        );
+      }}
+    </Draggable>
   );
 }
 
@@ -375,8 +438,15 @@ export default function App() {
   const [editingSat, setEditingSat] = useState(false);
   const [editingEnd, setEditingEnd] = useState(false);
   const [eyedropper, setEyedropper] = useState(null); // { targetId } or null
+  // focused swatch tracking removed (no longer needed)
   const [presets, setPresets] = useState([]); // [{name, description, colors, colorCount}]
   const [presetName, setPresetName] = useState('');
+  // Row-selection and grid columns tracking
+  const [columns, setColumns] = useState(8);
+  const [showHelp, setShowHelp] = useState(false);
+  const gridRef = useRef(null);
+  // Custom color editor state
+  const [colorEditor, setColorEditor] = useState(null); // { id, color, h, s, v } or null
 
   // Track if a drag is in progress to prevent color picker popup
   // const [isDragging, setIsDragging] = useState(false);
@@ -394,9 +464,7 @@ export default function App() {
   }, []);
 
   // DnD-kit sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
+  // Sensors removed - @hello-pangea/dnd handles this automatically
 
   // Add undo/redo state
   const [history, setHistory] = useState([]); // stack of previous color arrays
@@ -421,11 +489,52 @@ export default function App() {
   }, [eyedropper]);
 
   // Helper to push to history (only if changed)
-  const pushHistory = (newColors) => {
+  const pushHistory = useCallback((newColors) => {
     setHistory(h => [...h, colors.map(c => ({ ...c }))]);
     setFuture([]);
     setColors(newColors);
-  };
+  }, [colors]);
+
+  // Screen pick helper (adds a new swatch)
+  const handleScreenPickAddNew = useCallback(async () => {
+    try {
+      if ('EyeDropper' in window) {
+        const eye = new window.EyeDropper();
+        const result = await eye.open();
+        const newHex = result.sRGBHex.toUpperCase();
+        pushHistory([...colors, { id: uuidv4(), color: newHex }]);
+      } else {
+        alert('Screen Eyedropper not supported in this browser.');
+      }
+    } catch (err) {
+      console.debug('Screen pick cancelled or failed:', err);
+    }
+  }, [colors, pushHistory]);
+
+  // Global shortcut: press 'E' to pick any on-screen color and add as a new swatch
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key.toLowerCase() === 'e') {
+        handleScreenPickAddNew();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleScreenPickAddNew]);
+
+  // Track desired columns based on container width (responsive breakpoints)
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const computeCols = () => {
+      // Always use 8 columns as requested
+      setColumns(8);
+    };
+    computeCols();
+    const ro = new ResizeObserver(() => computeCols());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Undo
   const handleUndo = () => {
@@ -457,76 +566,29 @@ export default function App() {
     }
     const text = await file.text();
     try {
-      const parser = new window.DOMParser();
-      const doc = parser.parseFromString(text, 'application/xml');
-      setXmlDoc(doc);
-      // Find <obj class="UColorSet" name="Event Colors">
-      const colorObjs = Array.from(doc.getElementsByTagName('obj'));
-      const eventColorsObj = colorObjs.find(
-        node => node.getAttribute('class') === 'UColorSet' && node.getAttribute('name') === 'Event Colors'
-      );
-      if (eventColorsObj) {
-        // Find <list name="Set">
-        const setList = Array.from(eventColorsObj.getElementsByTagName('list')).find(
-          l => l.getAttribute('name') === 'Set'
-        );
-        if (setList) {
-          // Find all <item> in the set
-          const items = Array.from(setList.getElementsByTagName('item'));
-          // For each item, get <int name="Color" value="..."/>
-          const colorInts = items.map(item => {
-            const colorInt = Array.from(item.getElementsByTagName('int')).find(
-              intNode => intNode.getAttribute('name') === 'Color'
-            );
-            return colorInt ? colorInt.getAttribute('value') : null;
-          }).filter(Boolean);
-          setColors(colorInts.map(argb => ({ id: uuidv4(), color: argbIntToHex(argb) })));
-          setHistory([]);
-          setFuture([]);
-        } else {
-          setError('Could not find <list name="Set"> in Event Colors.');
-        }
-      } else {
-        setError('Could not find <obj class="UColorSet" name="Event Colors">.');
+      const doc = parseDefaultsXml(text);
+      const hexes = extractEventColors(doc);
+      if (!hexes) {
+        setError('Could not find Event Colors in this Defaults.xml');
+        return;
       }
-    } catch {
-      setError('Failed to parse XML.');
+      setXmlDoc(doc);
+      setColors(hexes.map(hex => ({ id: uuidv4(), color: hex })));
+      setHistory([]);
+      setFuture([]);
+    } catch (err) {
+      console.error(err);
+      setError(String(err.message || 'Failed to parse XML.'));
     }
   };
 
   // Download updated XML
   const handleDownload = () => {
     if (!xmlDoc) return;
-    // Find <obj class="UColorSet" name="Event Colors">
-    const colorObjs = Array.from(xmlDoc.getElementsByTagName('obj'));
-    const eventColorsObj = colorObjs.find(
-      node => node.getAttribute('class') === 'UColorSet' && node.getAttribute('name') === 'Event Colors'
-    );
-    if (eventColorsObj) {
-      const setList = Array.from(eventColorsObj.getElementsByTagName('list')).find(
-        l => l.getAttribute('name') === 'Set'
-      );
-      if (setList) {
-        // Remove all existing children (should be <item> nodes)
-        while (setList.firstChild) setList.removeChild(setList.firstChild);
-        // For each color, add an <item><string name="Name" value="ColorN" wide="true"/><int name="Color" value="..."/></item>
-        colors.forEach(({ color }, idx) => {
-          const itemNode = xmlDoc.createElement('item');
-          const stringNode = xmlDoc.createElement('string');
-          stringNode.setAttribute('name', 'Name');
-          stringNode.setAttribute('value', `Color${idx}`);
-          stringNode.setAttribute('wide', 'true');
-          const intNode = xmlDoc.createElement('int');
-          intNode.setAttribute('name', 'Color');
-          intNode.setAttribute('value', hexToArgbInt(color).toString());
-          itemNode.appendChild(stringNode);
-          itemNode.appendChild(intNode);
-          setList.appendChild(itemNode);
-        });
-      }
-    }
+    // Only update Event Colors, leave everything else intact
+    const doc = updateEventColors(xmlDoc, colors.map(c => c.color));
     const serializer = new window.XMLSerializer();
-    const xml = serializer.serializeToString(xmlDoc);
+    const xml = serializer.serializeToString(doc);
     const blob = new Blob([xml], { type: 'application/xml' });
     saveAs(blob, 'Defaults.xml');
   };
@@ -537,8 +599,19 @@ export default function App() {
   };
 
   // Remove a color
-  const handleRemoveColor = (id) => {
-    pushHistory(colors.filter(c => c.id !== id));
+  const handleRemoveColor = (id, deleteRow = false) => {
+    if (!deleteRow) {
+      pushHistory(colors.filter(c => c.id !== id));
+      return;
+    }
+    // Delete entire row containing this id
+    const idx = colors.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    const row = Math.floor(idx / columns);
+    const start = row * columns;
+    const end = Math.min(start + columns, colors.length);
+    const remaining = colors.filter((_, i) => i < start || i >= end);
+  pushHistory(remaining);
   };
 
   // Delete all colors
@@ -557,13 +630,35 @@ export default function App() {
   const MAX_LIGHTEN = 0.7; // 0.7 = 70% toward white at 100%
   const computedGradientEnd = lighten(previewGradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
 
-  // Handle drag end for reordering
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = colors.findIndex(c => c.id === active.id);
-    const newIndex = colors.findIndex(c => c.id === over.id);
-    pushHistory(arrayMove(colors, oldIndex, newIndex));
+  // Handle drag end for reordering rows with @hello-pangea/dnd
+  const onDragEnd = (result) => {
+    const { source, destination } = result;
+    
+    // Dropped outside the list
+    if (!destination) return;
+    
+    // No movement
+    if (source.index === destination.index) return;
+    
+    console.log('Row drag end - from:', source.index, 'to:', destination.index);
+    
+    // Reorganize the colors array by moving entire rows
+    const sourceRowStart = source.index * columns;
+    const sourceRowEnd = Math.min(sourceRowStart + columns, colors.length);
+    const rowColors = colors.slice(sourceRowStart, sourceRowEnd);
+    
+    // Remove from source
+    const newColors = [...colors];
+    newColors.splice(sourceRowStart, rowColors.length);
+    
+    // Insert at destination
+    const destRowStart = destination.index * columns;
+    newColors.splice(destRowStart, 0, ...rowColors);
+    
+    console.log('Moved row of', rowColors.length, 'colors from index', sourceRowStart, 'to', destRowStart);
+    
+    // Update immediately - pushHistory will handle the state update
+    pushHistory(newColors);
   };
 
   // Helper: lighten a hex color by percent (0-1)
@@ -598,6 +693,7 @@ export default function App() {
       e.stopPropagation();
       return;
     }
+    // Note: Shift selection moved to drag handle, not the swatch body
     // Ctrl+click: duplicate swatch next to itself
     if (e.ctrlKey) {
       const idx = colors.findIndex(c => c.id === id);
@@ -619,9 +715,81 @@ export default function App() {
       e.stopPropagation();
       return;
     }
-    // Default: open color picker
-    document.getElementById(`color-input-${id}`)?.click();
+    // Default: open custom color editor
+    const currentColor = colors.find(c => c.id === id)?.color;
+    if (currentColor) {
+      // Calculate HSV from hex
+      const r = parseInt(currentColor.slice(1, 3), 16) / 255;
+      const g = parseInt(currentColor.slice(3, 5), 16) / 255;
+      const b = parseInt(currentColor.slice(5, 7), 16) / 255;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      let h = 0;
+      if (delta !== 0) {
+        if (max === r) h = ((g - b) / delta) % 6;
+        else if (max === g) h = (b - r) / delta + 2;
+        else h = (r - g) / delta + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+      }
+      const s = max === 0 ? 0 : (delta / max) * 100;
+      const v = max * 100;
+      setColorEditor({ id, color: currentColor, h, s, v });
+    }
+    e.stopPropagation();
   };
+
+  // When user presses a swatch drag handle, allow Shift to select that row
+  // Row dragging is now handled by @hello-pangea/dnd - no manual handlers needed
+
+  // Tools: palette transforms and eyedropper controls
+  const handleReversePalette = () => {
+    if (colors.length < 2) return;
+    pushHistory([...colors].reverse());
+  };
+
+  const handleShufflePalette = () => {
+    if (colors.length < 2) return;
+    const shuffled = [...colors]
+      .map(v => ({ v, r: Math.random() }))
+      .sort((a, b) => a.r - b.r)
+      .map(({ v }) => v);
+    pushHistory(shuffled);
+  };
+
+  const handleSortByHue = () => {
+    const sorted = [...colors].sort((a, b) => {
+      const [ha,, la] = hexToHsl(a.color);
+      const [hb,, lb] = hexToHsl(b.color);
+      if (ha === hb) return la - lb;
+      return ha - hb;
+    });
+    pushHistory(sorted);
+  };
+
+  const handleSortBySaturation = () => {
+    const sorted = [...colors].sort((a, b) => {
+      const [,sa, la] = hexToHsl(a.color);
+      const [,sb, lb] = hexToHsl(b.color);
+      if (sa === sb) return la - lb;
+      return sa - sb;
+    });
+    pushHistory(sorted);
+  };
+
+  const handleSortByLightness = () => {
+    const sorted = [...colors].sort((a, b) => {
+      const [, , la] = hexToHsl(a.color);
+      const [, , lb] = hexToHsl(b.color);
+      return la - lb;
+    });
+    pushHistory(sorted);
+  };
+
+  // Eyedropper button removed with top toolbar; keep Alt-click on swatches and global screen pick (E)
+
+  // Removed focused-swatches screen-pick variant to match new global add-new behavior
 
   // --- Debugging / dev tools ---
   // Log colors state on change
@@ -665,36 +833,7 @@ export default function App() {
     localStorage.setItem('cubase-color-presets', JSON.stringify(updated));
   };
 
-  // Run round-trip test
-  const handleRoundTripTest = async () => {
-    if (colors.length === 0) return;
-    try {
-      // Create a test XML document
-      const testDoc = new DOMParser().parseFromString('<root/>', 'application/xml');
-      const root = testDoc.documentElement;
-      
-      // Simulate export
-      colors.forEach(({ color }) => {
-        const argb = hexToArgbInt(color);
-        const item = testDoc.createElement('item');
-        item.setAttribute('value', argb.toString());
-        root.appendChild(item);
-      });
-      
-      // Simulate import
-      const items = Array.from(root.getElementsByTagName('item'));
-      const reimported = items.map(item => {
-        const argb = item.getAttribute('value');
-        return argbIntToHex(argb);
-      });
-      
-      // Check if colors match
-      const allMatch = reimported.every((c, i) => c === colors[i].color);
-      alert(allMatch ? '✓ Round-trip test passed! All colors match.' : '✗ Round-trip test failed. Colors do not match.');
-    } catch (e) {
-      alert('✗ Round-trip test failed: ' + e.message);
-    }
-  };
+  // Round-trip test removed per request
 
   // Create backup
   const handleCreateBackup = () => {
@@ -710,66 +849,324 @@ export default function App() {
   };
 
   return (
-    <div className="app-bg" style={{ minHeight: '100vh', background: '#232323', color: '#fff', fontFamily: 'Inter, Arial, sans-serif' }}>
-      <div className="flex-root" style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
-        {/* Sidebar */}
-        <aside style={{
-          width: 230,
-          flexShrink: 0,
-          background: '#202124',
-          borderRadius: 14,
-          padding: 10,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 320,
-          position: 'sticky',
-          top: 0,
-          alignSelf: 'flex-start',
-          boxShadow: '0 2px 16px #0004',
-          border: '1px solid #232323',
-          margin: 24,
-          marginRight: 0,
-          height: 'calc(100vh - 48px)', // 24px margin top/bottom
-          maxHeight: 'calc(100vh - 48px)',
-          overflowY: 'auto',
-          gap: 0,
-        }}>
+    <div className="app">
+      {/* Custom Color Editor Modal with react-colorful */}
+      {colorEditor && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => setColorEditor(null)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              padding: 24,
+              minWidth: 340,
+              border: '1px solid #333',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 16 }}>Color editor</div>
+            
+            {/* Custom SV Picker + Hue Slider */}
+            {(() => {
+              const hsvToHex = (h, s, v) => {
+                s /= 100;
+                v /= 100;
+                const c = v * s;
+                const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+                const m = v - c;
+                let r = 0, g = 0, b = 0;
+                if (h < 60) { r = c; g = x; b = 0; }
+                else if (h < 120) { r = x; g = c; b = 0; }
+                else if (h < 180) { r = 0; g = c; b = x; }
+                else if (h < 240) { r = 0; g = x; b = c; }
+                else if (h < 300) { r = x; g = 0; b = c; }
+                else { r = c; g = 0; b = x; }
+                const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+                return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+              };
+
+              const updateColor = (newH, newS, newV) => {
+                const newColor = hsvToHex(newH, newS, newV);
+                setColorEditor({ ...colorEditor, color: newColor, h: newH, s: newS, v: newV });
+                if (colorEditor.id === 'gradient-start') {
+                  setGradientStart(newColor);
+                } else {
+                  pushHistory(colors.map(c => c.id === colorEditor.id ? { ...c, color: newColor } : c));
+                }
+              };
+
+              // Use stored HSV values from colorEditor state
+              const { h, s, v } = colorEditor;
+
+              return (
+                <>
+                  {/* Saturation-Value Picker */}
+                  <div
+                    style={{
+                      width: '100%',
+                      height: 200,
+                      borderRadius: 8,
+                      position: 'relative',
+                      background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${h}, 100%, 50%))`,
+                      cursor: 'crosshair',
+                      marginBottom: 16,
+                      border: '2px solid #333'
+                    }}
+                    onMouseDown={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const updateFromMouse = (clientX, clientY) => {
+                        const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                        const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+                        const newS = x * 100;
+                        const newV = (1 - y) * 100;
+                        updateColor(h, newS, newV);
+                      };
+                      updateFromMouse(e.clientX, e.clientY);
+                      
+                      const onMove = (e) => updateFromMouse(e.clientX, e.clientY);
+                      const onUp = () => {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                      };
+                      document.addEventListener('mousemove', onMove);
+                      document.addEventListener('mouseup', onUp);
+                    }}
+                  >
+                    {/* Cursor indicator */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: `${s}%`,
+                        top: `${100 - v}%`,
+                        width: 20,
+                        height: 20,
+                        border: '3px solid white',
+                        borderRadius: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        pointerEvents: 'none',
+                        boxShadow: '0 0 4px rgba(0,0,0,0.5)'
+                      }}
+                    />
+                  </div>
+
+                  {/* Hue Slider */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>H</label>
+                      <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace' }}>{Math.round(h)}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="360"
+                      value={h}
+                      onChange={(e) => {
+                        updateColor(parseFloat(e.target.value), s, v);
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 32,
+                        borderRadius: 6,
+                        background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+                        border: '2px solid #333',
+                        appearance: 'none',
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  {/* Saturation Slider */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>S</label>
+                      <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace' }}>{Math.round(s)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={s}
+                      onChange={(e) => {
+                        updateColor(h, parseFloat(e.target.value), v);
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 32,
+                        borderRadius: 6,
+                        background: `linear-gradient(to right, hsl(${h}, 0%, ${v / 2}%), hsl(${h}, 100%, 50%))`,
+                        border: '2px solid #333',
+                        appearance: 'none',
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  {/* Value/Brightness Slider */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label style={{ color: '#aaa', fontSize: 12, fontWeight: 600 }}>V</label>
+                      <span style={{ color: '#666', fontSize: 11, fontFamily: 'monospace' }}>{Math.round(v)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={v}
+                      onChange={(e) => {
+                        updateColor(h, s, parseFloat(e.target.value));
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 32,
+                        borderRadius: 6,
+                        background: `linear-gradient(to right, #000, hsl(${h}, ${s}%, 50%))`,
+                        border: '2px solid #333',
+                        appearance: 'none',
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* Color Preview, Hex, and Name */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <div
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 8,
+                    background: colorEditor.color,
+                    border: '2px solid #333',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
+                    flexShrink: 0
+                  }}
+                />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+                  <input
+                    type="text"
+                    value={colorEditor.color}
+                    maxLength={7}
+                    onChange={(e) => {
+                      let val = e.target.value.toUpperCase();
+                      if (!val.startsWith('#')) val = '#' + val;
+                      if (/^#[0-9A-F]{6}$/.test(val)) {
+                        // Calculate HSV from the new hex value
+                        const r = parseInt(val.slice(1, 3), 16) / 255;
+                        const g = parseInt(val.slice(3, 5), 16) / 255;
+                        const b = parseInt(val.slice(5, 7), 16) / 255;
+                        const max = Math.max(r, g, b);
+                        const min = Math.min(r, g, b);
+                        const delta = max - min;
+                        let newH = colorEditor.h; // Preserve hue if color is grayscale
+                        if (delta !== 0) {
+                          if (max === r) newH = ((g - b) / delta) % 6;
+                          else if (max === g) newH = (b - r) / delta + 2;
+                          else newH = (r - g) / delta + 4;
+                          newH *= 60;
+                          if (newH < 0) newH += 360;
+                        }
+                        const newS = max === 0 ? 0 : (delta / max) * 100;
+                        const newV = max * 100;
+                        setColorEditor({ ...colorEditor, color: val, h: newH, s: newS, v: newV });
+                        if (colorEditor.id === 'gradient-start') {
+                          setGradientStart(val);
+                        } else {
+                          pushHistory(colors.map(c => c.id === colorEditor.id ? { ...c, color: val } : c));
+                        }
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      fontSize: 15,
+                      fontFamily: 'monospace',
+                      fontWeight: 600,
+                      padding: '10px 14px',
+                      background: '#252525',
+                      border: '1px solid #444',
+                      borderRadius: 8,
+                      color: '#fff',
+                      textAlign: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                    spellCheck={false}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    data-form-type="other"
+                  />
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#888',
+                    textAlign: 'center',
+                    padding: '8px 14px',
+                    background: '#252525',
+                    border: '1px solid #444',
+                    borderRadius: 8,
+                    boxSizing: 'border-box',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {getColorName(colorEditor.color)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setColorEditor(null)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                background: '#2a2a2a',
+                border: '1px solid #444',
+                borderRadius: 8,
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+      
+      <div className="layout">
+        {/* Left Sidebar */}
+        <aside className="sidebar left" style={{ padding: 10, gap: 0 }}>
           {/* Palette Actions Section */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', marginBottom: 6 }}>Palette Actions</div>
             <div style={{ color: '#bbb', fontSize: 13, marginBottom: 8 }}>Colors: <b>{colors.length}</b></div>
-            {/* Import Button Container - improved styling */}
-            <div style={{ marginBottom: 6, width: '100%' }}>
-              <button className="btn" onClick={handleFileUpload} style={{ display: 'none' }} />
-              <label htmlFor="import-xml" style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'pointer',
-                background: '#232323',
-                borderRadius: 7,
-                padding: '7px 10px',
-                fontWeight: 600,
-                color: '#fff',
-                fontSize: 15,
-                boxShadow: '0 1px 4px #0002',
-                border: '1px solid #333',
-                marginBottom: 0,
-                outline: 'none',
-                width: '100%',
-                minHeight: 40,
-                justifyContent: 'flex-start',
-                boxSizing: 'border-box',
-              }} tabIndex={0} aria-label="Import XML">
-                <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M10 4v8m0 0l-3-3m3 3l3-3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="4" y="14" width="12" height="2" rx="1" fill="#fff"/></svg>
-                <span>Import</span>
-                <input id="import-xml" type="file" accept=".xml" onChange={handleFileUpload} style={{ display: 'none' }} />
-              </label>
-            </div>
-            <button className="btn" onClick={handleDownload} disabled={colors.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length === 0 ? 0.5 : 1, cursor: colors.length === 0 ? 'not-allowed' : 'pointer', marginBottom: 5, minHeight: 36, justifyContent: 'flex-start' }} aria-label="Export XML">
-              <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M10 16V8m0 0l-3 3m3-3l3 3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="4" y="4" width="12" height="2" rx="1" fill="#fff"/></svg>
-              <span>Export</span>
-            </button>
+            {/* Import/Export/Donate removed: handled on right sidebar */}
             <div style={{ display: 'flex', flexDirection: 'row', gap: 6, marginBottom: 6 }}>
               <button
                 onClick={handleUndo}
@@ -834,72 +1231,167 @@ export default function App() {
             </div>
           </div>
           <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '6px 0 6px 0' }} />
-          {/* Round-Trip Test and Create Backup */}
-          <button 
-            className="btn" 
-            onClick={handleRoundTripTest} 
-            disabled={colors.length === 0}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#2d5016', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #3d6020', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length === 0 ? 0.5 : 1, cursor: colors.length === 0 ? 'not-allowed' : 'pointer', marginBottom: 6, minHeight: 36, justifyContent: 'flex-start' }}
-          >
-            <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#4caf50"/><path d="M7 10l2 2 4-4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            <span>Run Round-Trip Test</span>
-          </button>
-          <button 
-            className="btn" 
-            onClick={handleCreateBackup}
-            disabled={!xmlDoc}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: !xmlDoc ? 0.5 : 1, cursor: !xmlDoc ? 'not-allowed' : 'pointer', marginBottom: 6, minHeight: 36, justifyContent: 'flex-start' }}
-          >
-            <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M10 4v8m0 0l-3-3m3 3l3-3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="4" y="14" width="12" height="2" rx="1" fill="#fff"/></svg>
-            <span>Create Backup</span>
-          </button>
+          {/* Round-Trip Test removed */}
+          {/* Create Backup moved to right sidebar */}
           <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '6px 0 6px 0' }} />
           {/* Gradient Generator Section */}
-          <div style={{ background: '#232323', borderRadius: 10, padding: 8, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: '#fff', marginBottom: 2, letterSpacing: '-0.5px' }}>Gradient Generator</div>
-            {/* Steps above Start/End controls */}
-            <label style={{ display: 'block', color: '#eee', fontSize: 13, marginBottom: 4 }}>
-              Steps
-              <input type="number" min={2} max={32} value={gradientSteps} onChange={e => setGradientSteps(Number(e.target.value))} style={{ width: 48, marginLeft: 6, fontSize: 14, borderRadius: 5, border: '1px solid #444', background: '#181818', color: '#fff', padding: '2px 6px' }} aria-label="Gradient Steps" />
-            </label>
-            {/* Start/End controls */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'center' }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2, color: '#eee', fontSize: 13 }}>
-                Start
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <input type="color" value={previewGradientStart} onChange={e => {
-                    setGradientStart(e.target.value);
-                  }} style={{ width: 32, height: 32, border: 'none', background: 'none', padding: 0 }} aria-label="Gradient Start Color" />
-                  <input
-                    type="text"
-                    value={gradientStart}
-                    maxLength={7}
-                    onChange={e => {
-                      let val = e.target.value.toUpperCase();
+          <div style={{ background: '#232323', borderRadius: 10, padding: 12, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', marginBottom: 4, letterSpacing: '-0.3px' }}>Gradient Generator</div>
+            
+            {/* Live Gradient Preview */}
+            <div style={{
+              height: 32,
+              borderRadius: 6,
+              background: `linear-gradient(to right, ${generateGradientSaturation(previewGradientStart, computedGradientEnd, gradientSteps, gradientSaturation).join(', ')})`,
+              border: '1px solid #444',
+              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.3)',
+            }} title="Gradient preview" />
+            
+            {/* Steps control */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+              <label style={{ flex: 1, color: '#eee', fontSize: 13, fontWeight: 600 }}>
+                Steps
+              </label>
+              <input 
+                type="number" 
+                min={2} 
+                max={32} 
+                value={gradientSteps} 
+                onChange={e => setGradientSteps(Number(e.target.value))} 
+                style={{ 
+                  width: 56, 
+                  fontSize: 14, 
+                  borderRadius: 6, 
+                  border: '1px solid #444', 
+                  background: '#181818', 
+                  color: '#fff', 
+                  padding: '4px 8px',
+                  textAlign: 'center',
+                  fontWeight: 600
+                }} 
+                aria-label="Gradient Steps" 
+              />
+              <div style={{ display: 'inline-flex', gap: 4 }}>
+                <button onClick={() => setGradientSteps(4)} style={{ background: gradientSteps === 4 ? '#444' : '#2b2b2b', color: gradientSteps === 4 ? '#fff' : '#ddd', border: '1px solid #444', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s' }}>4</button>
+                <button onClick={() => setGradientSteps(8)} style={{ background: gradientSteps === 8 ? '#444' : '#2b2b2b', color: gradientSteps === 8 ? '#fff' : '#ddd', border: '1px solid #444', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s' }}>8</button>
+              </div>
+            </div>
+            {/* Start/End color controls */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+              {/* Start */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ color: '#eee', fontSize: 13, fontWeight: 600 }}>Start</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <div 
+                    style={{ 
+                      width: 40, 
+                      height: 40, 
+                      border: '2px solid #444', 
+                      borderRadius: 6,
+                      background: gradientStart,
+                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3)',
+                      flexShrink: 0,
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      // Calculate HSV from hex
+                      const r = parseInt(gradientStart.slice(1, 3), 16) / 255;
+                      const g = parseInt(gradientStart.slice(3, 5), 16) / 255;
+                      const b = parseInt(gradientStart.slice(5, 7), 16) / 255;
+                      const max = Math.max(r, g, b);
+                      const min = Math.min(r, g, b);
+                      const delta = max - min;
+                      let h = 0;
+                      if (delta !== 0) {
+                        if (max === r) h = ((g - b) / delta) % 6;
+                        else if (max === g) h = (b - r) / delta + 2;
+                        else h = (r - g) / delta + 4;
+                        h *= 60;
+                        if (h < 0) h += 360;
+                      }
+                      const s = max === 0 ? 0 : (delta / max) * 100;
+                      const v = max * 100;
+                      setColorEditor({ id: 'gradient-start', color: gradientStart, h, s, v });
+                    }}
+                    title="Click to change color"
+                  />
+                  <div 
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={e => {
+                      let val = e.currentTarget.textContent.toUpperCase();
                       if (!val.startsWith('#')) val = '#' + val;
                       if (/^#[0-9A-F]{0,6}$/.test(val)) {
                         setGradientStart(val);
                       }
                     }}
-                    style={{ width: 70, fontSize: 14, borderRadius: 5, border: '1px solid #444', background: '#181818', color: '#fff', padding: '2px 6px' }}
-                    spellCheck={false}
-                    autoComplete="off"
-                    aria-label="Gradient Start Hex"
+                    onBlur={e => {
+                      e.currentTarget.textContent = gradientStart;
+                    }}
+                    style={{ 
+                      flex: 1,
+                      fontSize: 13, 
+                      borderRadius: 6, 
+                      border: '1px solid #444', 
+                      background: '#1a1a1a', 
+                      color: '#888', 
+                      padding: '8px',
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      fontFamily: 'monospace',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'text'
+                    }}
+                  >
+                    {gradientStart}
+                  </div>
+                </div>
+              </div>
+              
+              {/* End */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ color: '#aaa', fontSize: 13, fontWeight: 600 }}>End <span style={{ fontSize: 11, color: '#777' }}>(auto)</span></label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <div 
+                    style={{ 
+                      width: 40, 
+                      height: 40, 
+                      border: '2px solid #444', 
+                      borderRadius: 6,
+                      background: computedGradientEnd,
+                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3)',
+                      flexShrink: 0
+                    }} 
+                    title={computedGradientEnd}
                   />
+                  <div style={{ 
+                    flex: 1,
+                    fontSize: 13, 
+                    borderRadius: 6, 
+                    border: '1px solid #444', 
+                    background: '#1a1a1a', 
+                    color: '#888', 
+                    padding: '8px',
+                    textAlign: 'center',
+                    fontWeight: 600,
+                    fontFamily: 'monospace',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {computedGradientEnd}
+                  </div>
                 </div>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2, color: '#eee', fontSize: 13 }}>
-                End
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <input type="color" value={computedGradientEnd} disabled style={{ opacity: 0.7, cursor: 'not-allowed', width: 32, height: 32, border: 'none', background: 'none', padding: 0 }} aria-label="Gradient End Color (auto)" />
-                </div>
-              </label>
+              </div>
             </div>
-            {/* Saturation and End% sliders with values to the right of the labels */}
-            <div style={{ width: '100%', marginTop: 2 }}>
-              <div style={{ display: 'flex', flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 2 }}>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', fontSize: 13, color: '#eee' }}>
-                  <span>Saturation</span>
+            {/* Saturation and Lightness controls */}
+            <div style={{ width: '100%', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Saturation */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, color: '#eee', fontWeight: 600 }}>Saturation</span>
                   {editingSat ? (
                     <input
                       type="number"
@@ -915,12 +1407,12 @@ export default function App() {
                         let v = Math.max(0, Math.min(100, Number(e.target.value)));
                         setGradientSaturation(v / 100);
                       }}
-                      style={{ marginLeft: 6, width: 40, fontSize: 13, color: '#bbb', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'right', padding: '1px 4px' }}
+                      style={{ width: 48, fontSize: 13, color: '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600 }}
                       aria-label="Edit Saturation %"
                     />
                   ) : (
                     <span
-                      style={{ marginLeft: 6, fontSize: 13, color: '#bbb', minWidth: 36, textAlign: 'right', display: 'inline-block', cursor: 'pointer', borderBottom: '1px dashed #888' }}
+                      style={{ fontSize: 13, color: '#bbb', minWidth: 42, textAlign: 'center', cursor: 'pointer', padding: '2px 6px', background: '#2a2a2a', borderRadius: 4, fontWeight: 600 }}
                       tabIndex={0}
                       onClick={() => setEditingSat(true)}
                       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setEditingSat(true); }}
@@ -930,8 +1422,22 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', fontSize: 13, color: '#eee' }}>
-                  <span>End</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={gradientSaturation}
+                  onChange={e => setGradientSaturation(Number(e.target.value))}
+                  style={{ width: '100%' }}
+                  aria-label="Gradient Saturation"
+                />
+              </div>
+              
+              {/* Lightness (End %) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, color: '#eee', fontWeight: 600 }}>Lightness</span>
                   {editingEnd ? (
                     <input
                       type="number"
@@ -947,33 +1453,21 @@ export default function App() {
                         let v = Math.max(0, Math.min(100, Number(e.target.value)));
                         setGradientEndPct(v);
                       }}
-                      style={{ marginLeft: 6, width: 40, fontSize: 13, color: '#bbb', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'right', padding: '1px 4px' }}
-                      aria-label="Edit End %"
+                      style={{ width: 48, fontSize: 13, color: '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600 }}
+                      aria-label="Edit Lightness %"
                     />
                   ) : (
                     <span
-                      style={{ marginLeft: 6, fontSize: 13, color: '#bbb', minWidth: 36, textAlign: 'right', display: 'inline-block', cursor: 'pointer', borderBottom: '1px dashed #888' }}
+                      style={{ fontSize: 13, color: '#bbb', minWidth: 42, textAlign: 'center', cursor: 'pointer', padding: '2px 6px', background: '#2a2a2a', borderRadius: 4, fontWeight: 600 }}
                       tabIndex={0}
                       onClick={() => setEditingEnd(true)}
                       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setEditingEnd(true); }}
-                      title="Click to edit end %"
+                      title="Click to edit lightness %"
                     >
                       {gradientEndPct}%
                     </span>
                   )}
                 </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'row', gap: 8, alignItems: 'center', width: '100%' }}>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={gradientSaturation}
-                  onChange={e => setGradientSaturation(Number(e.target.value))}
-                  style={{ flex: 1, width: '100%', minWidth: 60, maxWidth: 100, marginLeft: 0 }}
-                  aria-label="Gradient Saturation"
-                />
                 <input
                   type="range"
                   min={0}
@@ -981,20 +1475,20 @@ export default function App() {
                   step={1}
                   value={gradientEndPct}
                   onChange={e => setGradientEndPct(Number(e.target.value))}
-                  style={{ flex: 1, width: '100%', minWidth: 60, maxWidth: 100, marginLeft: 0 }}
-                  aria-label="Gradient End % toward white"
+                  style={{ width: '100%' }}
+                  aria-label="Gradient Lightness %"
                 />
               </div>
             </div>
             <button className="btn" style={{ width: '100%', marginTop: 6, background: '#444', color: '#fff', fontWeight: 700, borderRadius: 7, fontSize: 15, boxShadow: '0 1px 4px #0002', border: 'none', padding: '7px 0', transition: 'background 0.15s', outline: 'none' }} onClick={handleApplyGradient} aria-label="Add Gradient" onFocus={e => e.currentTarget.style.boxShadow = '0 0 0 2px #ff4d4d'} onBlur={e => e.currentTarget.style.boxShadow = '0 1px 4px #0002'}>Add Gradient</button>
           </div>
-          {/* Balance Palette button - moved below Gradient Generator */}
+          {/* Balance Palette button */}
           <button
             className="btn"
             onClick={handleBalancePalette}
             disabled={colors.length < 2}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length < 2 ? 0.5 : 1, cursor: colors.length < 2 ? 'not-allowed' : 'pointer', marginBottom: 12, minHeight: 36, justifyContent: 'flex-start'
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length < 2 ? 0.5 : 1, cursor: colors.length < 2 ? 'not-allowed' : 'pointer', margin: '8px 0 12px 0', minHeight: 36, justifyContent: 'flex-start'
             }}
             aria-label="Balance Palette"
             title="Balance palette: harmonise hue, lightness, and saturation for consistency"
@@ -1002,194 +1496,162 @@ export default function App() {
             <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M4 10h12M6 7l-2 3 2 3M14 13l2-3-2-3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             <span>Balance Palette</span>
           </button>
-          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '5px 0 12px 0' }} />
-          {/* Danger Zone Section */}
-          <div style={{ fontSize: 13, color: '#ff4d4d', fontWeight: 700, marginBottom: 3, letterSpacing: '0.5px' }}>Danger Zone</div>
-          <button className="btn" onClick={handleDeleteAll} disabled={colors.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', color: '#ff4d4d', fontWeight: 700, borderRadius: 7, fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1.5px solid #ff4d4d', padding: '7px 10px', transition: 'background 0.15s,color 0.15s', outline: 'none', opacity: colors.length === 0 ? 0.5 : 1, cursor: colors.length === 0 ? 'not-allowed' : 'pointer', marginBottom: 0 }} aria-label="Delete All Colors" onMouseOver={e => { e.currentTarget.style.background = '#ff4d4d'; e.currentTarget.style.color = '#fff'; }} onMouseOut={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#ff4d4d'; }}>
-            <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#fff"/><path d="M6 6l8 8M14 6l-8 8" stroke="#ff4d4d" strokeWidth="2" strokeLinecap="round"/></svg>
-            <span>Delete All</span>
-          </button>
           {error && <div style={{ color: '#ff4d4d', fontWeight: 600, fontSize: 15, marginTop: 8 }}>{error}</div>}
-          {/* Donation Button Section */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '18px 0 0 0' }}>
-            <a
-              href="https://www.paypal.com/donate/?hosted_button_id=M5R7YKVH2SPQC"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 10,
-                background: '#ffc439',
-                color: '#222',
-                fontWeight: 700,
-                fontSize: 15,
-                borderRadius: 7,
-                padding: '8px 18px',
-                textDecoration: 'none',
-                boxShadow: '0 1px 4px #0002',
-                border: '1.5px solid #e6b800',
-                marginTop: 2,
-                marginBottom: 2,
-                transition: 'background 0.15s',
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-              aria-label="Donate via PayPal"
-            >
-              PayPal
-            </a>
-            <span style={{ color: '#bbb', fontSize: 12, marginTop: 2, textAlign: 'center' }}>Support development</span>
-          </div>
-        </aside>
-        {/* Main content: color palette and presets */}
-        <div style={{ flex: 1, display: 'flex', gap: 20, margin: '24px 24px 24px 20px', minWidth: 0 }}>
-        <main style={{ flex: 1, width: '100%', maxWidth: 1400, padding: 0, minWidth: 0 }}>
-          {/* DnD context provider for sortable colors */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={colors.map(c => c.id)} strategy={rectSortingStrategy}>
-              <div
-                className="palette-grid"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(8, minmax(0, 1fr))',
-                  gap: 16,
-                  width: '100%',
-                  // No marginLeft or paddingLeft
-                  transition: 'padding-left 0.2s',
-                }}
-              >
-                {colors.map((c) => (
-                  <SortableSwatch
-                    key={c.id}
-                    id={c.id}
-                    color={c.color}
-                    onColorChange={handleColorChange}
-                    onRemove={handleRemoveColor}
-                    onCopy={setCopiedIndex}
-                    copied={copiedIndex === c.id}
-                    onSwatchClick={handleSwatchClick}
-                  />
-                ))}
-                {/* Add color button: only show if colors are loaded (i.e. after import) */}
-                {colors.length > 0 && (
-                  <button
-                    onClick={handleAddColor}
-                    aria-label="Add color"
-                    style={{
-                      width: '100%',
-                      aspectRatio: '1',
-                      borderRadius: 16,
-                      border: '2px dashed #444',
-                      background: 'none',
-                      color: '#888',
-                      fontSize: 36,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      transition: 'border 0.2s, color 0.2s',
-                      outline: 'none',
-                    }}
-                    tabIndex={0}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') handleAddColor();
-                    }}
-                    title="Add new color"
-                  >+
-                  </button>
-                )}
+            {/* Tips (left bottom) */}
+            <div style={{
+              marginTop: 12,
+              background: '#2a2a2a',
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              padding: '10px 12px',
+              color: '#ddd',
+              fontSize: 12,
+              lineHeight: 1.5,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}>
+              <div>
+                <span style={{ marginRight: 6 }}>💡</span>
+                <strong>Tip:</strong> Use the eyedropper to add colors from anywhere on your screen.
               </div>
-            </SortableContext>
-          </DndContext>
-          {/* Instructions and info */}
-          <div style={{ color: '#ddd', fontSize: 14, lineHeight: 1.6, maxWidth: 800, margin: '0 auto', padding: '0 16px' }}>
-            <p style={{ marginBottom: 12 }}>
-              Welcome to the <strong style={{ color: '#ff4d4d' }}>Cubase Color Palette Editor</strong>! 🎨
-            </p>
-            <p style={{ marginBottom: 12 }}>
-              <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase is not running</span> before editing your color palette.<br/>
-              You must import your <b>Defaults.xml</b> from:<br/>
-              <span style={{ color: '#fff', background: '#222', padding: '2px 6px', borderRadius: 5, fontFamily: 'Fira Mono, monospace', fontSize: 13 }}>
-                C:\Users\(your username)\AppData\Roaming\Steinberg\Cubase 14
-              </span>
-            </p>
-            <p style={{ marginBottom: 12 }}>
-              <b>Tip:</b> Make a backup copy of your Defaults.xml before editing, so you can restore it if needed.
-            </p>
-            <p style={{ marginBottom: 12 }}>
-              <strong>Getting Started & Controls:</strong>
-            </p>
-            <ol style={{ marginLeft: 16, marginBottom: 12 }}>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Import Defaults.xml:</strong> Click the "Import" button and select your Defaults.xml file from the Cubase directory above.
-              </li>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Edit Colours:</strong> Click any colour swatch to open the colour picker. <br/>
-                <b>Drag</b> a swatch to reorder. <br/>
-                <b>Ctrl+Click</b> a swatch to duplicate it. <br/>
-              </li>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Apply a Gradient:</strong> Use the Gradient Generator to create smooth colour transitions. Adjust the start colour, number of steps, saturation, and end percentage. Click "Add Gradient" to append the generated colours to your palette.
-              </li>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Balance Palette:</strong> Click "Balance Palette" to harmonise hue, lightness, and saturation for a more consistent look.
-              </li>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Undo/Redo:</strong> Use the Undo and Redo buttons to revert or reapply changes to your palette.
-              </li>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Danger Zone:</strong> Use "Delete All" to clear your palette. <span style={{ color: '#ff4d4d' }}><b>This cannot be undone!</b></span>
-              </li>
-              <li style={{ marginBottom: 8 }}>
-                <strong>Export Your Palette:</strong> Once you're satisfied, click "Export" to download the updated Defaults.xml for Cubase.
-              </li>
-            </ol>
-            <p style={{ marginBottom: 0 }}>
-              <strong>Note:</strong> This tool is continuously being improved. If you encounter any issues or have suggestions, please let me know!
-            </p>
-          </div>
-          {/* Eyedropper Tip */}
-          <div style={{
-            background: '#2a2a2a',
-            borderRadius: 10,
-            padding: '12px 16px',
-            margin: '20px auto 0',
-            maxWidth: 800,
-            border: '1px solid #444',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}>
-            <span style={{ fontSize: 24 }}>💡</span>
-            <div style={{ flex: 1, color: '#ddd', fontSize: 13, lineHeight: 1.5 }}>
-              <strong>Tip:</strong> Use the eyedropper to add colors from anywhere on your screen.
+              <div>
+                <span style={{ marginRight: 6 }}>✨</span>
+                <strong>Row Reorder:</strong> Hold Shift while dragging a swatch handle (≡) to move the entire row!
+              </div>
             </div>
-          </div>
+            
+            {/* Help Button */}
+            <button
+              onClick={() => setShowHelp(!showHelp)}
+              style={{
+                width: '100%',
+                background: '#232323',
+                border: '1px solid #333',
+                borderRadius: 7,
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: 14,
+                padding: '8px 12px',
+                cursor: 'pointer',
+                marginTop: 12,
+              }}
+            >
+              {showHelp ? '❌ Close Help' : '❓ Show Help'}
+            </button>
+  </aside>
+  {/* Main content */}
+  <main className="main">
+          {/* DnD context provider for sortable rows */}
+          <DragDropContext 
+            onDragEnd={onDragEnd}
+          >
+              {/* Swatch Grid Container - Always visible */}
+              <div ref={gridRef} style={{ 
+                width: '100%', 
+                minHeight: '60vh',
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: 8,
+                background: '#1a1a1a',
+                borderRadius: 8,
+                padding: 16,
+                border: '1px solid #2f2f2f'
+              }}>
+              {colors.length === 0 ? (
+                // Empty state
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: '50vh',
+                  color: '#666',
+                  gap: 16
+                }}>
+                  <div style={{ fontSize: 64 }}>🎨</div>
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>No Colors Yet</div>
+                  <div style={{ fontSize: 14, textAlign: 'center', maxWidth: 400, lineHeight: 1.6 }}>
+                    Import a Defaults.xml file or click "+ Add Color" to get started
+                  </div>
+                </div>
+              ) : (
+                // Droppable list of rows
+                <Droppable droppableId="palette-rows" type="ROW">
+                  {(provided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      style={{ width: '100%' }}
+                    >
+                      {(() => {
+                        const rows = [];
+                        for (let start = 0; start < colors.length; start += columns) {
+                          const end = Math.min(start + columns, colors.length);
+                          const rowIndex = Math.floor(start / columns);
+                          rows.push({ start, end, rowId: `row-${rowIndex}`, rowIndex });
+                        }
+                        
+                        return rows.map((r) => (
+                          <DraggableRow key={r.rowId} rowId={r.rowId} rowIndex={r.rowIndex}>
+                            <div 
+                              className="row-grid" 
+                              style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, 
+                                gap: 8,
+                              }}
+                            >
+                              {colors.slice(r.start, r.end).map((c) => {
+                                return (
+                                  <SwatchDisplay
+                                    key={c.id}
+                                    id={c.id}
+                                    color={c.color}
+                                    onColorChange={handleColorChange}
+                                    onRemove={handleRemoveColor}
+                                    onCopy={setCopiedIndex}
+                                    copied={copiedIndex === c.id}
+                                    onSwatchClick={handleSwatchClick}
+                                    selected={false}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </DraggableRow>
+                        ));
+                      })()}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              )}
+              </div>
+          </DragDropContext>
         </main>
-        {/* Presets Panel */}
-        <aside style={{
-          width: 280,
-          flexShrink: 0,
-          background: '#202124',
-          borderRadius: 14,
-          padding: 16,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          alignSelf: 'flex-start',
-          position: 'sticky',
-          top: 24,
-          maxHeight: 'calc(100vh - 48px)',
-          overflowY: 'auto',
-          boxShadow: '0 2px 16px #0004',
-          border: '1px solid #232323',
-        }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', marginBottom: 4 }}>Palette Presets</div>
+        {/* Right Sidebar: Presets Panel */}
+        <aside className="sidebar right" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Import & Export */}
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', marginBottom: 6 }}>Import & Export</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 12 }}>
+            <label htmlFor="right-import" style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#232323', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 13, width: '100%'
+            }}>
+              <span>Import</span>
+              <input id="right-import" type="file" accept=".xml" onChange={handleFileUpload} style={{ display: 'none' }} />
+            </label>
+            <button onClick={handleDownload} disabled={colors.length===0} style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#232323', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', width: '100%'
+            }}>Export</button>
+            <button onClick={handleCreateBackup} disabled={!xmlDoc} style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#232323', color: '#fff', border: '1px solid #333', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', width: '100%'
+            }}>Create Backup</button>
+            <button onClick={handleAddColor} style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#444', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 13, cursor: 'pointer', width: '100%'
+            }}>+ Add Color</button>
+          </div>
+
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '6px 0 4px' }}>Palette Presets</div>
           
           {/* Save Preset Section */}
           <div style={{ marginBottom: 8 }}>
@@ -1234,9 +1696,53 @@ export default function App() {
             >
               Save
             </button>
+            {/* Load JSON placed directly below Save */}
+            <button
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = async (e) => {
+                  try {
+                    const file = e.target.files[0];
+                    const text = await file.text();
+                    const loaded = JSON.parse(text);
+                    setPresets(loaded);
+                    localStorage.setItem('cubase-color-presets', JSON.stringify(loaded));
+                  } catch (err) {
+                    alert('Failed to load presets: ' + err.message);
+                  }
+                };
+                input.click();
+              }}
+              style={{
+                width: '100%',
+                background: '#232323',
+                color: '#fff',
+                border: '1px solid #333',
+                borderRadius: 7,
+                padding: '8px 12px',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginTop: 8,
+              }}
+            >
+              Load JSON
+            </button>
           </div>
 
-          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '4px 0' }} />
+          <button
+            className="btn btn-danger"
+            onClick={handleDeleteAll}
+            disabled={colors.length === 0}
+            aria-label="Delete All Colors"
+            style={{ width: '100%', marginTop: 8 }}
+          >
+            Delete All
+          </button>
+
+          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '8px 0' }} />
 
           {/* Presets List */}
           {presets.length === 0 ? (
@@ -1318,79 +1824,149 @@ export default function App() {
             </div>
           )}
 
-          {/* Load button at bottom */}
-          <button
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '.json';
-              input.onchange = async (e) => {
-                try {
-                  const file = e.target.files[0];
-                  const text = await file.text();
-                  const loaded = JSON.parse(text);
-                  setPresets(loaded);
-                  localStorage.setItem('cubase-color-presets', JSON.stringify(loaded));
-                } catch (err) {
-                  alert('Failed to load presets: ' + err.message);
-                }
-              };
-              input.click();
-            }}
-            style={{
-              width: '100%',
-              background: '#232323',
-              color: '#fff',
-              border: '1px solid #333',
-              borderRadius: 7,
-              padding: '8px 12px',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              marginTop: 'auto',
-            }}
-          >
-            Load
-          </button>
+          {/* Controls Grid */}
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '12px 0 6px' }}>Controls</div>
+          <div className="btn-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+            {/* Balance Palette moved to left sidebar */}
+            <button className="btn" onClick={handleReversePalette} disabled={colors.length < 2} title="Reverse order" aria-label="Reverse">Reverse</button>
+            <button className="btn" onClick={handleShufflePalette} disabled={colors.length < 2} title="Shuffle colors" aria-label="Shuffle">Shuffle</button>
+            <button className="btn" onClick={handleSortByHue} disabled={colors.length < 2} title="Sort by Hue" aria-label="Sort by Hue">Sort: Hue</button>
+            <button className="btn" onClick={handleSortBySaturation} disabled={colors.length < 2} title="Sort by Saturation" aria-label="Sort by Saturation">Sort: Sat</button>
+            <button className="btn" onClick={handleSortByLightness} disabled={colors.length < 2} title="Sort by Lightness" aria-label="Sort by Lightness">Sort: Light</button>
+            {/* Round-Trip Test removed */}
+          </div>
+
+          {/* Danger Zone removed here (Delete All placed near Save Preset) */}
+
+          {/* Bottom Load button removed; now located under Save */}
         </aside>
-        </div>
       </div>
       {/* Eyedropper mode overlay */}
       {eyedropper && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 9999,
-          pointerEvents: 'none',
-        }}>
-          <div style={{
-            position: 'absolute',
-            top: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#222',
-            color: '#fff',
-            padding: '8px 18px',
-            borderRadius: 10,
-            fontWeight: 700,
-            fontSize: 16,
-            boxShadow: '0 2px 16px #0008',
-            border: '2px solid #ff4d4d',
-            opacity: 0.97,
-            pointerEvents: 'auto',
-          }}>
-            Eyedropper: Click another swatch to copy its color here, or press Esc to cancel
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: 24,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: '#222',
+              color: '#fff',
+              padding: '8px 18px',
+              borderRadius: 10,
+              fontWeight: 700,
+              fontSize: 16,
+              boxShadow: '0 2px 16px #0008',
+              border: '2px solid #ff4d4d',
+              opacity: 0.97,
+              pointerEvents: 'auto',
+              cursor: 'pointer',
+            }}
+            title="Click to cancel eyedropper"
+            onClick={e => { e.stopPropagation(); setEyedropper(null); }}
+          >
+            Eyedropper active — click a swatch to copy its color. Click this banner to cancel.
           </div>
         </div>
       )}
-      {/* Responsive sidebar: collapse on small screens */}
-      <style>{`
-        @media (max-width: 900px) {
-          .flex-root { flex-direction: column !important; }
-          aside { width: 100% !important; margin: 12px 0 0 0 !important; border-radius: 0 0 14px 14px !important; }
-          main { margin: 12px 0 0 0 !important; }
-        }
-      `}</style>
+      
+      {/* Help Modal */}
+      {showHelp && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#000c',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowHelp(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 700,
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 4px 24px #0008',
+              border: '1px solid #333',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 style={{ color: '#ff4d4d', marginTop: 0, marginBottom: 16 }}>Cubase Color Palette Editor 🎨</h2>
+            
+            <div style={{ color: '#ddd', fontSize: 14, lineHeight: 1.6 }}>
+              <p style={{ marginBottom: 12 }}>
+                <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase is not running</span> before editing your color palette.<br/>
+                You must import your <b>Defaults.xml</b> from:<br/>
+                <span style={{ color: '#fff', background: '#222', padding: '2px 6px', borderRadius: 5, fontFamily: 'Fira Mono, monospace', fontSize: 13, display: 'inline-block', marginTop: 4 }}>
+                  C:\Users\(your username)\AppData\Roaming\Steinberg\Cubase 14
+                </span>
+              </p>
+              
+              <h3 style={{ color: '#fff', marginTop: 20, marginBottom: 12 }}>Getting Started:</h3>
+              <ol style={{ marginLeft: 16, marginBottom: 12 }}>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Import Defaults.xml:</strong> Click the "Import" button and select your Defaults.xml file from the Cubase directory above.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Edit Colours:</strong> Click any colour swatch to open the colour picker. <br/>
+                  <b>Drag</b> a swatch's handle (≡) to reorder it. <br/>
+                  <b>Hold Shift + Drag</b> a swatch handle to select and reorder the entire row. <br/>
+                  <b>Shift+X</b> (delete button) removes the entire row. <br/>
+                  <b>Ctrl+Click</b> a swatch to duplicate it. <br/>
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Apply a Gradient:</strong> Use the Gradient Generator to create smooth colour transitions.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Balance Palette:</strong> Click "Balance Palette" to harmonise hue, lightness, and saturation.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Undo/Redo:</strong> Use the Undo and Redo buttons to revert or reapply changes.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Export:</strong> Once satisfied, click "Export" to download the updated Defaults.xml.
+                </li>
+              </ol>
+              
+              <p style={{ marginTop: 16, fontSize: 13, color: '#aaa' }}>
+                <strong>Tip:</strong> Make a backup copy of your Defaults.xml before editing!
+              </p>
+            </div>
+            
+            <button
+              onClick={() => setShowHelp(false)}
+              style={{
+                marginTop: 20,
+                width: '100%',
+                background: '#444',
+                border: 'none',
+                borderRadius: 8,
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: 14,
+                padding: '10px',
+                cursor: 'pointer',
+              }}
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
