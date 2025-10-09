@@ -375,9 +375,23 @@ export default function App() {
   const [editingSat, setEditingSat] = useState(false);
   const [editingEnd, setEditingEnd] = useState(false);
   const [eyedropper, setEyedropper] = useState(null); // { targetId } or null
+  const [presets, setPresets] = useState([]); // [{name, description, colors, colorCount}]
+  const [presetName, setPresetName] = useState('');
 
   // Track if a drag is in progress to prevent color picker popup
   // const [isDragging, setIsDragging] = useState(false);
+
+  // Load presets from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('cubase-color-presets');
+      if (saved) {
+        setPresets(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('Failed to load presets:', e);
+    }
+  }, []);
 
   // DnD-kit sensors
   const sensors = useSensors(
@@ -621,6 +635,80 @@ export default function App() {
     pushHistory(balanced);
   };
 
+  // Save current palette as a preset
+  const handleSavePreset = () => {
+    if (!presetName.trim() || colors.length === 0) return;
+    const newPreset = {
+      id: uuidv4(),
+      name: presetName.trim(),
+      description: '',
+      colors: colors.map(c => c.color),
+      colorCount: colors.length,
+      createdAt: new Date().toISOString()
+    };
+    const updated = [...presets, newPreset];
+    setPresets(updated);
+    localStorage.setItem('cubase-color-presets', JSON.stringify(updated));
+    setPresetName('');
+  };
+
+  // Load a preset
+  const handleLoadPreset = (preset) => {
+    const newColors = preset.colors.map(color => ({ id: uuidv4(), color }));
+    pushHistory(newColors);
+  };
+
+  // Delete a preset
+  const handleDeletePreset = (presetId) => {
+    const updated = presets.filter(p => p.id !== presetId);
+    setPresets(updated);
+    localStorage.setItem('cubase-color-presets', JSON.stringify(updated));
+  };
+
+  // Run round-trip test
+  const handleRoundTripTest = async () => {
+    if (colors.length === 0) return;
+    try {
+      // Create a test XML document
+      const testDoc = new DOMParser().parseFromString('<root/>', 'application/xml');
+      const root = testDoc.documentElement;
+      
+      // Simulate export
+      colors.forEach(({ color }) => {
+        const argb = hexToArgbInt(color);
+        const item = testDoc.createElement('item');
+        item.setAttribute('value', argb.toString());
+        root.appendChild(item);
+      });
+      
+      // Simulate import
+      const items = Array.from(root.getElementsByTagName('item'));
+      const reimported = items.map(item => {
+        const argb = item.getAttribute('value');
+        return argbIntToHex(argb);
+      });
+      
+      // Check if colors match
+      const allMatch = reimported.every((c, i) => c === colors[i].color);
+      alert(allMatch ? '✓ Round-trip test passed! All colors match.' : '✗ Round-trip test failed. Colors do not match.');
+    } catch (e) {
+      alert('✗ Round-trip test failed: ' + e.message);
+    }
+  };
+
+  // Create backup
+  const handleCreateBackup = () => {
+    if (!xmlDoc) {
+      alert('Please import a Defaults.xml file first.');
+      return;
+    }
+    const serializer = new window.XMLSerializer();
+    const xml = serializer.serializeToString(xmlDoc);
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const date = new Date().toISOString().split('T')[0];
+    saveAs(blob, `Defaults_backup_${date}.xml`);
+  };
+
   return (
     <div className="app-bg" style={{ minHeight: '100vh', background: '#232323', color: '#fff', fontFamily: 'Inter, Arial, sans-serif' }}>
       <div className="flex-root" style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
@@ -745,6 +833,26 @@ export default function App() {
               </button>
             </div>
           </div>
+          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '6px 0 6px 0' }} />
+          {/* Round-Trip Test and Create Backup */}
+          <button 
+            className="btn" 
+            onClick={handleRoundTripTest} 
+            disabled={colors.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#2d5016', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #3d6020', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length === 0 ? 0.5 : 1, cursor: colors.length === 0 ? 'not-allowed' : 'pointer', marginBottom: 6, minHeight: 36, justifyContent: 'flex-start' }}
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#4caf50"/><path d="M7 10l2 2 4-4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span>Run Round-Trip Test</span>
+          </button>
+          <button 
+            className="btn" 
+            onClick={handleCreateBackup}
+            disabled={!xmlDoc}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: !xmlDoc ? 0.5 : 1, cursor: !xmlDoc ? 'not-allowed' : 'pointer', marginBottom: 6, minHeight: 36, justifyContent: 'flex-start' }}
+          >
+            <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M10 4v8m0 0l-3-3m3 3l3-3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><rect x="4" y="14" width="12" height="2" rx="1" fill="#fff"/></svg>
+            <span>Create Backup</span>
+          </button>
           <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '6px 0 6px 0' }} />
           {/* Gradient Generator Section */}
           <div style={{ background: '#232323', borderRadius: 10, padding: 8, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -934,8 +1042,9 @@ export default function App() {
             <span style={{ color: '#bbb', fontSize: 12, marginTop: 2, textAlign: 'center' }}>Support development</span>
           </div>
         </aside>
-        {/* Main content: color palette */}
-        <main style={{ flex: 1, width: '100%', maxWidth: 1400, margin: '24px 24px 24px 20px', padding: 0, minWidth: 0 }}>
+        {/* Main content: color palette and presets */}
+        <div style={{ flex: 1, display: 'flex', gap: 20, margin: '24px 24px 24px 20px', minWidth: 0 }}>
+        <main style={{ flex: 1, width: '100%', maxWidth: 1400, padding: 0, minWidth: 0 }}>
           {/* DnD context provider for sortable colors */}
           <DndContext
             sensors={sensors}
@@ -1044,7 +1153,207 @@ export default function App() {
               <strong>Note:</strong> This tool is continuously being improved. If you encounter any issues or have suggestions, please let me know!
             </p>
           </div>
+          {/* Eyedropper Tip */}
+          <div style={{
+            background: '#2a2a2a',
+            borderRadius: 10,
+            padding: '12px 16px',
+            margin: '20px auto 0',
+            maxWidth: 800,
+            border: '1px solid #444',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <span style={{ fontSize: 24 }}>💡</span>
+            <div style={{ flex: 1, color: '#ddd', fontSize: 13, lineHeight: 1.5 }}>
+              <strong>Tip:</strong> Use the eyedropper to add colors from anywhere on your screen.
+            </div>
+          </div>
         </main>
+        {/* Presets Panel */}
+        <aside style={{
+          width: 280,
+          flexShrink: 0,
+          background: '#202124',
+          borderRadius: 14,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          alignSelf: 'flex-start',
+          position: 'sticky',
+          top: 24,
+          maxHeight: 'calc(100vh - 48px)',
+          overflowY: 'auto',
+          boxShadow: '0 2px 16px #0004',
+          border: '1px solid #232323',
+        }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px', marginBottom: 4 }}>Palette Presets</div>
+          
+          {/* Save Preset Section */}
+          <div style={{ marginBottom: 8 }}>
+            <input
+              type="text"
+              placeholder="Preset name..."
+              value={presetName}
+              onChange={e => setPresetName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleSavePreset();
+              }}
+              disabled={colors.length === 0}
+              style={{
+                width: '100%',
+                background: '#181818',
+                border: '1px solid #333',
+                borderRadius: 7,
+                padding: '8px 12px',
+                color: '#fff',
+                fontSize: 14,
+                marginBottom: 8,
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+            <button
+              onClick={handleSavePreset}
+              disabled={!presetName.trim() || colors.length === 0}
+              style={{
+                width: '100%',
+                background: '#444',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 7,
+                padding: '8px 12px',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: colors.length === 0 || !presetName.trim() ? 'not-allowed' : 'pointer',
+                opacity: colors.length === 0 || !presetName.trim() ? 0.5 : 1,
+                transition: 'background 0.15s',
+              }}
+            >
+              Save
+            </button>
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '4px 0' }} />
+
+          {/* Presets List */}
+          {presets.length === 0 ? (
+            <div style={{ color: '#888', fontSize: 13, textAlign: 'center', padding: '20px 10px', lineHeight: 1.5 }}>
+              No presets saved yet. Save your current palette to create your first preset!
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {presets.map(preset => (
+                <div
+                  key={preset.id}
+                  style={{
+                    background: '#181818',
+                    borderRadius: 8,
+                    padding: 10,
+                    border: '1px solid #333',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#fff', marginBottom: 2 }}>{preset.name}</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>{preset.colorCount} colors</div>
+                    </div>
+                    <button
+                      onClick={() => handleDeletePreset(preset.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#ff4d4d',
+                        cursor: 'pointer',
+                        fontSize: 18,
+                        padding: 2,
+                        lineHeight: 1,
+                      }}
+                      title="Delete preset"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {/* Preview colors */}
+                  <div style={{ display: 'flex', gap: 2, marginBottom: 8, flexWrap: 'wrap' }}>
+                    {preset.colors.slice(0, 8).map((color, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          width: 20,
+                          height: 20,
+                          background: color,
+                          borderRadius: 4,
+                          border: '1px solid #222',
+                        }}
+                      />
+                    ))}
+                    {preset.colors.length > 8 && (
+                      <div style={{ fontSize: 12, color: '#888', alignSelf: 'center', marginLeft: 4 }}>
+                        +{preset.colors.length - 8} more
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleLoadPreset(preset)}
+                    style={{
+                      width: '100%',
+                      background: '#444',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '6px 12px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    Apply
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Load button at bottom */}
+          <button
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.json';
+              input.onchange = async (e) => {
+                try {
+                  const file = e.target.files[0];
+                  const text = await file.text();
+                  const loaded = JSON.parse(text);
+                  setPresets(loaded);
+                  localStorage.setItem('cubase-color-presets', JSON.stringify(loaded));
+                } catch (err) {
+                  alert('Failed to load presets: ' + err.message);
+                }
+              };
+              input.click();
+            }}
+            style={{
+              width: '100%',
+              background: '#232323',
+              color: '#fff',
+              border: '1px solid #333',
+              borderRadius: 7,
+              padding: '8px 12px',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              marginTop: 'auto',
+            }}
+          >
+            Load
+          </button>
+        </aside>
+        </div>
       </div>
       {/* Eyedropper mode overlay */}
       {eyedropper && (
