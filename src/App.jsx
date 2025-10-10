@@ -1263,7 +1263,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       // Ignore if typing in an input/textarea
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
       
       if (e.key.toLowerCase() === 'e') {
         e.preventDefault(); // Prevent any default behavior
@@ -1273,6 +1273,30 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []); // Empty deps - only register once
+
+  // Global shortcut: press 'R' to toggle between SWATCH and ROW drag modes
+  const toggleDragMode = useCallback(() => {
+    // Guard conditions: requires XML loaded and at least one color
+    if (!xmlDoc || colors.length === 0) return;
+    setDragMode((m) => (m === 'SWATCH' ? 'ROW' : 'SWATCH'));
+  }, [xmlDoc, colors.length]);
+
+  const toggleDragModeRef = useRef(toggleDragMode);
+  useEffect(() => {
+    toggleDragModeRef.current = toggleDragMode;
+  }, [toggleDragMode]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if (e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        toggleDragModeRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Track desired columns based on container width (responsive breakpoints)
   useEffect(() => {
@@ -3670,53 +3694,6 @@ export default function App() {
       <div className="layout">
         {/* Left Sidebar */}
         <aside className="sidebar left" style={{ padding: 10, gap: 0 }}>
-          {/* Drag Mode Toggle */}
-          <button 
-            onClick={() => setDragMode(dragMode === 'SWATCH' ? 'ROW' : 'SWATCH')}
-            disabled={!xmlDoc || colors.length === 0}
-            title={dragMode === 'SWATCH' ? 'Switch to Row Drag Mode' : 'Switch to Swatch Drag Mode'}
-            style={{
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: 8, 
-              width: '100%', 
-              background: (!xmlDoc || colors.length === 0) ? '#232323' : (dragMode === 'ROW' ? '#4a9eff' : '#444'), 
-              color: '#fff', 
-              border: (!xmlDoc || colors.length === 0) ? '1px solid #333' : 'none', 
-              borderRadius: 7, 
-              padding: '10px 14px', 
-              fontWeight: 700, 
-              fontSize: 13, 
-              cursor: (!xmlDoc || colors.length === 0) ? 'not-allowed' : 'pointer',
-              opacity: (!xmlDoc || colors.length === 0) ? 0.5 : 1,
-              marginBottom: 8,
-              boxShadow: '0 1px 4px #0002',
-              transition: 'all 0.15s'
-            }}
-            onMouseEnter={(e) => { 
-              if (xmlDoc && colors.length > 0) {
-                e.currentTarget.style.transform = 'scale(1.02)';
-              }
-            }}
-            onMouseLeave={(e) => { 
-              if (xmlDoc && colors.length > 0) {
-                e.currentTarget.style.transform = 'scale(1)';
-              }
-            }}
-          >
-            {dragMode === 'SWATCH' ? (
-              <>
-                <RowModeIcon />
-                <span>Row Mode</span>
-              </>
-            ) : (
-              <>
-                <SwatchModeIcon />
-                <span>Swatch Mode</span>
-              </>
-            )}
-          </button>
 
           {/* Round-Trip Test removed */}
           {/* Create Backup moved to right sidebar */}
@@ -4096,6 +4073,54 @@ export default function App() {
               Add Gradient
             </button>
           </div>
+          {/* Drag Mode Toggle (moved below Add Gradient) */}
+          <button 
+            onClick={() => setDragMode(dragMode === 'SWATCH' ? 'ROW' : 'SWATCH')}
+            disabled={!xmlDoc || colors.length === 0}
+            title={dragMode === 'SWATCH' ? 'Switch to Row Drag Mode' : 'Switch to Swatch Drag Mode'}
+            style={{
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: 8, 
+              width: '100%', 
+              background: (!xmlDoc || colors.length === 0) ? '#232323' : (dragMode === 'ROW' ? '#4a9eff' : '#444'), 
+              color: '#fff', 
+              border: (!xmlDoc || colors.length === 0) ? '1px solid #333' : 'none', 
+              borderRadius: 7, 
+              padding: '10px 14px', 
+              fontWeight: 700, 
+              fontSize: 13, 
+              cursor: (!xmlDoc || colors.length === 0) ? 'not-allowed' : 'pointer',
+              opacity: (!xmlDoc || colors.length === 0) ? 0.5 : 1,
+              margin: '8px 0',
+              boxShadow: '0 1px 4px #0002',
+              transition: 'all 0.15s'
+            }}
+            onMouseEnter={(e) => { 
+              if (xmlDoc && colors.length > 0) {
+                e.currentTarget.style.transform = 'scale(1.02)';
+              }
+            }}
+            onMouseLeave={(e) => { 
+              if (xmlDoc && colors.length > 0) {
+                e.currentTarget.style.transform = 'scale(1)';
+              }
+            }}
+          >
+            {dragMode === 'SWATCH' ? (
+              <>
+                <RowModeIcon />
+                <span>Row Mode</span>
+              </>
+            ) : (
+              <>
+                <SwatchModeIcon />
+                <span>Swatch Mode</span>
+              </>
+            )}
+          </button>
+
           {/* Harmony control */}
           <div style={{ width: '100%', margin: '4px 0 8px 0', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
