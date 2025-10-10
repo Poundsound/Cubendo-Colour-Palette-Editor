@@ -6,6 +6,7 @@ import { DndProvider, useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
+import LogoCubendo from './logo/Logo_Cubendo.svg';
 
 const MAX_PALETTE_COLORS = 128;
 
@@ -39,6 +40,8 @@ function hslToHex(h, s, l) {
   const toHex = (val) => Math.round(val * 255).toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
 }
+
+const randomHex = () => `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
 
 function hexToHsl(hex) {
   if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return [0, 0, 0];
@@ -422,9 +425,9 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
 
 // Row component using @hello-pangea/dnd's Draggable
 // Row component with drag handle for row-level reordering
-function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, setCopiedIndex, copiedIndex, columns }) {
+function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, setCopiedIndex, copiedIndex, columns, canDrag }) {
   return (
-    <Draggable draggableId={rowId} index={rowIndex} type="ROW">
+    <Draggable draggableId={rowId} index={rowIndex} type="ROW" isDragDisabled={!canDrag}>
       {(provided, snapshot) => {
         const style = {
           ...provided.draggableProps.style,
@@ -454,31 +457,33 @@ function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColo
           <div
             {...provided.dragHandleProps}
             style={{
-              cursor: 'grab',
+              cursor: canDrag ? 'grab' : 'not-allowed',
               padding: '8px',
-              background: '#2a2a2a',
+              background: canDrag ? '#2a2a2a' : '#3a1f1f',
               borderRadius: 8,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: 16,
-              color: '#888',
+              color: canDrag ? '#888' : '#ff7777',
               fontWeight: 900,
               userSelect: 'none',
               flexShrink: 0,
               transition: 'background 0.15s, color 0.15s',
             }}
             onMouseEnter={(e) => {
+              if (!canDrag) return;
               e.currentTarget.style.background = '#333';
               e.currentTarget.style.color = '#fff';
             }}
             onMouseLeave={(e) => {
+              if (!canDrag) return;
               e.currentTarget.style.background = '#2a2a2a';
               e.currentTarget.style.color = '#888';
             }}
-            title="Drag to reorder entire row"
+            title={canDrag ? 'Drag to reorder entire row' : 'Add more colors to drag this row'}
           >
-            ⋮⋮
+            {canDrag ? '⋮⋮' : '✕'}
           </div>
           {/* Row grid - NOT draggable individually when in row mode */}
           <div style={{ 
@@ -666,6 +671,8 @@ export default function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [pendingXmlFile, setPendingXmlFile] = useState(null);
+  const [importModalError, setImportModalError] = useState('');
   const gridRef = useRef(null);
   const mainScrollRef = useRef(null);
   const swatchGridRef = useRef(null); // SWATCH mode grid container
@@ -675,6 +682,7 @@ export default function App() {
   const [balanceScore, setBalanceScore] = useState(null);
   const [originalOrder, setOriginalOrder] = useState(null);
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
+  const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
 
   const displayedPercentRaw = isBalancing ? balanceProgress : (balanceScore ?? 0);
   const displayedPercent = Math.round(Math.min(100, Math.max(0, displayedPercentRaw)));
@@ -997,25 +1005,27 @@ export default function App() {
     resetBalanceUi();
   };
 
-  // Handle file upload and parse XML
-  const handleFileUpload = async (e) => {
-    setError('');
-    let file;
-    if (e.target && e.target.files && e.target.files[0]) {
-      file = e.target.files[0];
-    } else if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-      file = e.dataTransfer.files[0];
-    } else {
-      setError('No file selected.');
-      return;
+  const closeImportModal = useCallback(() => {
+    setShowImportModal(false);
+    setPendingXmlFile(null);
+    setImportModalError('');
+  }, []);
+
+  const loadXmlDocumentFromFile = useCallback(async (file) => {
+    if (!file) {
+      const message = 'No file selected.';
+      setImportModalError(message);
+      setError(message);
+      return false;
     }
-    const text = await file.text();
+    setError('');
+    setImportModalError('');
     try {
+      const text = await file.text();
       const doc = parseDefaultsXml(text);
       const hexes = extractEventColors(doc);
       if (!hexes) {
-        setError('Could not find Event Colors in this Defaults.xml');
-        return;
+        throw new Error('Could not find Event Colors in this Defaults.xml');
       }
       setXmlDoc(doc);
       const imported = hexes
@@ -1026,13 +1036,58 @@ export default function App() {
       setHistory([]);
       setFuture([]);
       if (hexes.length > MAX_PALETTE_COLORS) {
-        setError(`Imported ${hexes.length} colors but only the first ${MAX_PALETTE_COLORS} were loaded.`);
+        const message = `Imported ${hexes.length} colors but only the first ${MAX_PALETTE_COLORS} were loaded.`;
+        setError(message);
+        setImportModalError(message);
       }
+      return true;
     } catch (err) {
       console.error(err);
-      setError(String(err.message || 'Failed to parse XML.'));
+      const message = String(err.message || 'Failed to parse XML.');
+      setImportModalError(message);
+      setError(message);
+      return false;
     }
-  };
+  }, []);
+
+  const handleFileSelection = useCallback((file) => {
+    if (!file) {
+      setImportModalError('No file selected.');
+      setPendingXmlFile(null);
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.xml')) {
+      setImportModalError('Please choose a .xml file.');
+      setPendingXmlFile(null);
+      return;
+    }
+    setPendingXmlFile(file);
+    setImportModalError('');
+    setError('');
+  }, []);
+
+  const handleImportPendingXml = useCallback(async () => {
+    if (!pendingXmlFile) {
+      setImportModalError('Select a Defaults.xml file first.');
+      return;
+    }
+    const success = await loadXmlDocumentFromFile(pendingXmlFile);
+    if (success) {
+      setPendingXmlFile(null);
+      closeImportModal();
+    }
+  }, [closeImportModal, loadXmlDocumentFromFile, pendingXmlFile]);
+
+  const handleBackupPendingXml = useCallback(() => {
+    if (!pendingXmlFile) {
+      setImportModalError('Select a Defaults.xml file first.');
+      return;
+    }
+    const baseName = pendingXmlFile.name.replace(/\.xml$/i, '') || 'Defaults';
+    const cleaned = baseName.replace(/\s*\(backup\)$/i, '').trim();
+    const suggestedName = `${cleaned} (backup).xml`;
+    saveAs(pendingXmlFile, suggestedName);
+  }, [pendingXmlFile]);
 
   // Download updated XML
   const handleDownload = () => {
@@ -1088,11 +1143,73 @@ export default function App() {
     pushHistory([...colors, { id: uuidv4(), color: '#000000' }]);
   };
 
+  const handleRandomizePalette = () => {
+    if (colors.length === 0) return;
+    const randomized = colors.map((swatch) => ({ ...swatch, color: randomHex() }));
+    pushHistory(randomized, { preserveScroll: true, skipFlip: true });
+    setError('');
+  };
+
   // Compute end color based on start color and percentage, clamped so 100% is not pure white
   const MAX_LIGHTEN = 0.7; // 0.7 = 70% toward white at 100%
   const computedGradientEnd = gradientManualEnd 
     ? gradientEndColor 
     : lighten(gradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+  const gradientControlsLocked = gradientManualEnd;
+
+  const hexToHSV = useCallback((hex) => {
+    if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+      return { h: 0, s: 0, v: 0 };
+    }
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+    let h = 0;
+    if (delta !== 0) {
+      if (max === r) h = ((g - b) / delta) % 6;
+      else if (max === g) h = (b - r) / delta + 2;
+      else h = (r - g) / delta + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    const s = max === 0 ? 0 : (delta / max) * 100;
+    const v = max * 100;
+    return { h, s, v };
+  }, []);
+
+  const openGradientEditor = useCallback(() => {
+    const startHSV = hexToHSV(gradientStart);
+    const endHSV = hexToHSV(computedGradientEnd);
+    setGradientEditor({
+      startH: startHSV.h,
+      startS: startHSV.s,
+      startV: startHSV.v,
+      endH: endHSV.h,
+      endS: endHSV.s,
+      endV: endHSV.v,
+      manualMode: gradientManualEnd,
+    });
+  }, [computedGradientEnd, gradientManualEnd, gradientStart, hexToHSV]);
+
+  useEffect(() => {
+    if (gradientControlsLocked) {
+      setEditingSat(false);
+      setEditingEnd(false);
+    }
+  }, [gradientControlsLocked]);
+
+  useEffect(() => {
+    if (!gradientEditor || gradientEditor.manualMode) return;
+    const nextEnd = hexToHSV(computedGradientEnd);
+    const deltaH = Math.abs((gradientEditor.endH ?? 0) - nextEnd.h);
+    const deltaS = Math.abs((gradientEditor.endS ?? 0) - nextEnd.s);
+    const deltaV = Math.abs((gradientEditor.endV ?? 0) - nextEnd.v);
+    if (deltaH < 0.1 && deltaS < 0.1 && deltaV < 0.1) return;
+    setGradientEditor(prev => (prev ? { ...prev, endH: nextEnd.h, endS: nextEnd.s, endV: nextEnd.v } : prev));
+  }, [computedGradientEnd, gradientEditor, hexToHSV]);
 
   // Handle drag end for reordering swatches with @hello-pangea/dnd
   const onDragEnd = (result) => {
@@ -1116,20 +1233,26 @@ export default function App() {
     } else if (type === 'ROW') {
       // Row drag - move entire row
       console.log('Row drag end - from:', source.index, 'to:', destination.index);
-      
-      const sourceRowStart = source.index * columns;
-      const sourceRowEnd = Math.min(sourceRowStart + columns, colors.length);
-      const rowColors = colors.slice(sourceRowStart, sourceRowEnd);
-      
-      // Remove from source
-      const newColors = [...colors];
-      newColors.splice(sourceRowStart, rowColors.length);
-      
-      // Insert at destination
-      const destRowStart = destination.index * columns;
-      newColors.splice(destRowStart, 0, ...rowColors);
-      
-      pushHistory(newColors);
+      const rows = [];
+      for (let start = 0; start < colors.length; start += columns) {
+        const end = Math.min(start + columns, colors.length);
+        rows.push(colors.slice(start, end));
+      }
+
+      const newRows = [...rows];
+      const [movedRow] = newRows.splice(source.index, 1);
+      newRows.splice(destination.index, 0, movedRow);
+
+      const firstPartialIndex = newRows.findIndex(row => row.length < columns);
+      const hasInvalidPlacement = firstPartialIndex !== -1 && firstPartialIndex !== newRows.length - 1;
+
+      if (hasInvalidPlacement) {
+        setError('');
+        return;
+      }
+
+      const flattened = newRows.reduce((acc, row) => acc.concat(row), []);
+      pushHistory(flattened);
     }
   };
 
@@ -1460,8 +1583,7 @@ export default function App() {
     const serializer = new window.XMLSerializer();
     const xml = serializer.serializeToString(xmlDoc);
     const blob = new Blob([xml], { type: 'application/xml' });
-    const date = new Date().toISOString().split('T')[0];
-    saveAs(blob, `Defaults_backup_${date}.xml`);
+    saveAs(blob, 'Defaults (backup).xml');
   };
 
   return (
@@ -1502,6 +1624,54 @@ export default function App() {
           onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
           >
             🔒 Backup
+          </button>
+
+          {/* Randomize Palette */}
+          <button
+            onClick={handleRandomizePalette}
+            disabled={colors.length === 0}
+            title={colors.length === 0 ? 'Add some colors first' : 'Roll a fresh random palette'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: colors.length === 0 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: colors.length === 0 ? 0.5 : 1, transition: 'background 0.15s, transform 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              if (colors.length > 0) {
+                e.currentTarget.style.background = '#333';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (colors.length > 0) {
+                e.currentTarget.style.background = '#2a2a2a';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="4" y="4" width="7" height="7" rx="1.4" stroke="#fff" strokeWidth="1.5" />
+              <rect x="13" y="4" width="7" height="7" rx="1.4" stroke="#fff" strokeWidth="1.5" />
+              <rect x="4" y="13" width="7" height="7" rx="1.4" stroke="#fff" strokeWidth="1.5" />
+              <circle cx="16.5" cy="16.5" r="3.5" fill="#fff" />
+            </svg>
+            Randomize
+          </button>
+
+          {/* Screen Eyedropper */}
+          <button
+            onClick={handleScreenPickAddNew}
+            disabled={paletteAtCapacity || !screenPickSupported}
+            title={screenPickSupported ? (paletteAtCapacity ? 'Palette is full' : 'Pick any on-screen color (shortcut: E)') : 'Screen eyedropper not supported'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: paletteAtCapacity || !screenPickSupported ? 0.5 : 1, transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (!paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (!paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M15.4 4.6l4 4-2.4 2.4 1.3 1.3a1 1 0 010 1.4l-1.6 1.6a1 1 0 01-1.4 0l-1.3-1.3-6.6 6.6H6v-4l6.6-6.6-1.3-1.3a1 1 0 010-1.4l1.6-1.6a1 1 0 011.4 0l1.3 1.3 2.4-2.4z" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M6 18h3.2" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            Eyedropper
           </button>
         </div>
         <div className="header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2138,6 +2308,29 @@ export default function App() {
                 </div>
               );
             })()}
+
+            {gradientEditor && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#bbb', fontSize: 12, fontWeight: 600 }}>Auto End Lightness</span>
+                  <span style={{ color: gradientEditor.manualMode ? '#555' : '#888', fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }}>
+                    {gradientEndPct}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={gradientEndPct}
+                  onChange={e => setGradientEndPct(Number(e.target.value))}
+                  disabled={gradientEditor.manualMode}
+                  style={{ width: '100%', opacity: gradientEditor.manualMode ? 0.35 : 1, cursor: gradientEditor.manualMode ? 'not-allowed' : 'pointer' }}
+                  title={gradientEditor.manualMode ? 'Switch off Manual End Color to adjust' : 'Adjust the auto-generated end lightness'}
+                  aria-label="Auto end lightness"
+                />
+              </div>
+            )}
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
               {/* Start Color Picker */}
@@ -2501,7 +2694,6 @@ export default function App() {
                           }}
                         />
                       </div>
-
                       {/* Color Preview and Name */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2539,27 +2731,63 @@ export default function App() {
               })()}
             </div>
 
-            {/* Done Button */}
-            <button
-              onClick={() => setGradientEditor(null)}
-              style={{
-                width: '100%',
-                padding: '12px',
-                background: '#2a2a2a',
-                border: '1px solid #444',
-                borderRadius: 8,
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'background 0.2s',
-                marginTop: 24
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
-              onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
-            >
-              Done
-            </button>
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+              <button
+                type="button"
+                disabled={paletteAtCapacity}
+                onClick={() => {
+                  if (paletteAtCapacity) return;
+                  handleApplyGradient();
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: paletteAtCapacity ? '#1f2a3d' : '#1f6bff',
+                  border: '1px solid rgba(44,115,255,0.6)',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: paletteAtCapacity ? 'not-allowed' : 'pointer',
+                  opacity: paletteAtCapacity ? 0.5 : 1,
+                  transition: 'background 0.2s, transform 0.2s'
+                }}
+                title={paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add this gradient to the palette'}
+                onMouseEnter={(e) => {
+                  if (!paletteAtCapacity) {
+                    e.currentTarget.style.background = '#1558d6';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = paletteAtCapacity ? '#1f2a3d' : '#1f6bff';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => setGradientEditor(null)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  background: '#2a2a2a',
+                  border: '1px solid #444',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2580,7 +2808,7 @@ export default function App() {
             zIndex: 10000,
             backdropFilter: 'blur(4px)'
           }}
-          onClick={() => setShowImportModal(false)}
+          onClick={closeImportModal}
         >
           <div
             className="custom-color-picker"
@@ -2615,11 +2843,7 @@ export default function App() {
                 e.currentTarget.style.borderColor = '#444';
                 e.currentTarget.style.background = '#232323';
                 const file = e.dataTransfer.files[0];
-                if (file && file.name.endsWith('.xml')) {
-                  const syntheticEvent = { target: { files: [file] } };
-                  await handleFileUpload(syntheticEvent);
-                  setShowImportModal(false);
-                }
+                handleFileSelection(file);
               }}
               style={{
                 border: '2px dashed #444',
@@ -2635,9 +2859,9 @@ export default function App() {
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.accept = '.xml';
-                input.onchange = async (e) => {
-                  await handleFileUpload(e);
-                  setShowImportModal(false);
+                input.onchange = (e) => {
+                  const selected = e.target.files?.[0];
+                  handleFileSelection(selected);
                 };
                 input.click();
               }}
@@ -2650,6 +2874,100 @@ export default function App() {
                 or click to browse
               </div>
             </div>
+
+            {pendingXmlFile && (
+              <div
+                style={{
+                  marginBottom: 20,
+                  background: '#2c1a1a',
+                  borderRadius: 10,
+                  border: '1px solid #a34444',
+                  padding: 22,
+                  color: '#ffeaea',
+                  boxShadow: '0 6px 24px rgba(0,0,0,0.45)'
+                }}
+              >
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#ffc7c7' }}>Backup strongly recommended</div>
+                <div style={{ fontFamily: 'Fira Mono, monospace', fontSize: 13, marginBottom: 14 }}>
+                  {pendingXmlFile.name}
+                  <span style={{ color: '#ff8d8d', marginLeft: 10 }}>
+                    {(pendingXmlFile.size / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, color: '#ffb3b3', marginBottom: 12, lineHeight: 1.6 }}>
+                  Create a backup copy before importing. This lets you roll back to your current Defaults.xml instantly.
+                </div>
+                <div style={{
+                  fontSize: 12,
+                  color: '#fff6f6',
+                  background: 'rgba(255, 120, 120, 0.18)',
+                  border: '1px solid rgba(255, 150, 150, 0.45)',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  marginBottom: 16,
+                  lineHeight: 1.6,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  When restoring, rename the backup back to <span style={{ fontFamily: 'Fira Mono, monospace' }}>Defaults.xml</span> — remove "(backup)" before replacing the original.
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleBackupPendingXml}
+                    style={{
+                      flex: 1,
+                      minWidth: 140,
+                      background: '#c94141',
+                      border: '1px solid rgba(255,120,120,0.65)',
+                      color: '#fff',
+                      fontWeight: 700,
+                      borderRadius: 8,
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s, transform 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#b23333';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = '#c94141';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    Create Backup
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleImportPendingXml}
+                    style={{
+                      flex: 1,
+                      minWidth: 140,
+                      background: '#2a2a2a',
+                      border: '1px solid #3a3a3a',
+                      color: '#fff',
+                      fontWeight: 700,
+                      borderRadius: 8,
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#353535'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; }}
+                  >
+                    Import Palette
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importModalError && (
+              <div style={{ color: '#ff8080', fontSize: 13, fontWeight: 600, marginBottom: 18 }}>
+                {importModalError}
+              </div>
+            )}
 
             {/* Path Info */}
             <div style={{ 
@@ -2672,7 +2990,7 @@ export default function App() {
 
             {/* Close Button */}
             <button
-              onClick={() => setShowImportModal(false)}
+              onClick={closeImportModal}
               style={{
                 width: '100%',
                 marginTop: 20,
@@ -2865,39 +3183,15 @@ export default function App() {
                       flexShrink: 0,
                       cursor: 'pointer'
                     }}
-                    onClick={() => {
-                      // Open gradient editor with both start and end colors
-                      const hexToHSV = (hex) => {
-                        const r = parseInt(hex.slice(1, 3), 16) / 255;
-                        const g = parseInt(hex.slice(3, 5), 16) / 255;
-                        const b = parseInt(hex.slice(5, 7), 16) / 255;
-                        const max = Math.max(r, g, b);
-                        const min = Math.min(r, g, b);
-                        const delta = max - min;
-                        let h = 0;
-                        if (delta !== 0) {
-                          if (max === r) h = ((g - b) / delta) % 6;
-                          else if (max === g) h = (b - r) / delta + 2;
-                          else h = (r - g) / delta + 4;
-                          h *= 60;
-                          if (h < 0) h += 360;
-                        }
-                        const s = max === 0 ? 0 : (delta / max) * 100;
-                        const v = max * 100;
-                        return { h, s, v };
-                      };
-                      const startHSV = hexToHSV(gradientStart);
-                      const endHSV = hexToHSV(computedGradientEnd);
-                      setGradientEditor({
-                        startH: startHSV.h,
-                        startS: startHSV.s,
-                        startV: startHSV.v,
-                        endH: endHSV.h,
-                        endS: endHSV.s,
-                        endV: endHSV.v,
-                        manualMode: gradientManualEnd
-                      });
+                    onClick={openGradientEditor}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openGradientEditor();
+                      }
                     }}
+                    role="button"
+                    tabIndex={0}
                     title="Click to edit gradient colors"
                   />
                   <div 
@@ -2990,11 +3284,31 @@ export default function App() {
                       borderRadius: 6,
                       background: computedGradientEnd,
                       boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.3)',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      cursor: 'pointer'
                     }} 
                     title={computedGradientEnd}
+                    onClick={openGradientEditor}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openGradientEditor();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                   />
-                  <div style={{ 
+                  <div
+                    onClick={openGradientEditor}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openGradientEditor();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    style={{ 
                     flex: 1,
                     fontSize: 13, 
                     borderRadius: 6, 
@@ -3007,8 +3321,10 @@ export default function App() {
                     fontFamily: 'monospace',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                  >
                     {computedGradientEnd}
                   </div>
                 </div>
@@ -3035,16 +3351,17 @@ export default function App() {
                         let v = Math.max(0, Math.min(100, Number(e.target.value)));
                         setGradientSaturation(v / 100);
                       }}
-                      style={{ width: 48, fontSize: 13, color: '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600 }}
+                      disabled={gradientControlsLocked}
+                      style={{ width: 48, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
                       aria-label="Edit Saturation %"
                     />
                   ) : (
                     <span
-                      style={{ fontSize: 13, color: '#bbb', minWidth: 42, textAlign: 'center', cursor: 'pointer', padding: '2px 6px', background: '#2a2a2a', borderRadius: 4, fontWeight: 600 }}
-                      tabIndex={0}
-                      onClick={() => setEditingSat(true)}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setEditingSat(true); }}
-                      title="Click to edit saturation %"
+                      style={{ fontSize: 13, color: gradientControlsLocked ? '#555' : '#bbb', minWidth: 42, textAlign: 'center', cursor: gradientControlsLocked ? 'not-allowed' : 'pointer', padding: '2px 6px', background: gradientControlsLocked ? '#1f1f1f' : '#2a2a2a', borderRadius: 4, fontWeight: 600, opacity: gradientControlsLocked ? 0.5 : 1 }}
+                      tabIndex={gradientControlsLocked ? -1 : 0}
+                      onClick={() => { if (!gradientControlsLocked) setEditingSat(true); }}
+                      onKeyDown={e => { if (!gradientControlsLocked && (e.key === 'Enter' || e.key === ' ')) setEditingSat(true); }}
+                      title={gradientControlsLocked ? 'Locked while end color is manual' : 'Click to edit saturation %'}
                     >
                       {Math.round(gradientSaturation * 100)}%
                     </span>
@@ -3057,7 +3374,8 @@ export default function App() {
                   step={0.01}
                   value={gradientSaturation}
                   onChange={e => setGradientSaturation(Number(e.target.value))}
-                  style={{ width: '100%' }}
+                  disabled={gradientControlsLocked}
+                  style={{ width: '100%', opacity: gradientControlsLocked ? 0.4 : 1 }}
                   aria-label="Gradient Saturation"
                 />
               </div>
@@ -3081,16 +3399,17 @@ export default function App() {
                         let v = Math.max(0, Math.min(100, Number(e.target.value)));
                         setGradientEndPct(v);
                       }}
-                      style={{ width: 48, fontSize: 13, color: '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600 }}
+                      disabled={gradientControlsLocked}
+                      style={{ width: 48, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
                       aria-label="Edit Lightness %"
                     />
                   ) : (
                     <span
-                      style={{ fontSize: 13, color: '#bbb', minWidth: 42, textAlign: 'center', cursor: 'pointer', padding: '2px 6px', background: '#2a2a2a', borderRadius: 4, fontWeight: 600 }}
-                      tabIndex={0}
-                      onClick={() => setEditingEnd(true)}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setEditingEnd(true); }}
-                      title="Click to edit lightness %"
+                      style={{ fontSize: 13, color: gradientControlsLocked ? '#555' : '#bbb', minWidth: 42, textAlign: 'center', cursor: gradientControlsLocked ? 'not-allowed' : 'pointer', padding: '2px 6px', background: gradientControlsLocked ? '#1f1f1f' : '#2a2a2a', borderRadius: 4, fontWeight: 600, opacity: gradientControlsLocked ? 0.5 : 1 }}
+                      tabIndex={gradientControlsLocked ? -1 : 0}
+                      onClick={() => { if (!gradientControlsLocked) setEditingEnd(true); }}
+                      onKeyDown={e => { if (!gradientControlsLocked && (e.key === 'Enter' || e.key === ' ')) setEditingEnd(true); }}
+                      title={gradientControlsLocked ? 'Locked while end color is manual' : 'Click to edit lightness %'}
                     >
                       {gradientEndPct}%
                     </span>
@@ -3103,7 +3422,8 @@ export default function App() {
                   step={1}
                   value={gradientEndPct}
                   onChange={e => setGradientEndPct(Number(e.target.value))}
-                  style={{ width: '100%' }}
+                  disabled={gradientControlsLocked}
+                  style={{ width: '100%', opacity: gradientControlsLocked ? 0.4 : 1 }}
                   aria-label="Gradient Lightness %"
                 />
               </div>
@@ -3275,6 +3595,7 @@ export default function App() {
                                 setCopiedIndex={setCopiedIndex}
                                 copiedIndex={copiedIndex}
                                 columns={columns}
+                                canDrag={row.colors.length >= columns}
                               />
                             ));
                           })()}
@@ -3689,7 +4010,11 @@ export default function App() {
 
       {/* Footer */}
       <footer className="app-footer">
-        <span>Cubendo Colour Picker</span>
+        <img
+          src={LogoCubendo}
+          alt="Cubendo Colour Picker"
+          style={{ height: 36, width: 'auto', display: 'block', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.45))' }}
+        />
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
