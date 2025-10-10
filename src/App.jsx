@@ -247,7 +247,6 @@ function DraggableSwatchGrid({
   return (
     <div
       ref={ref}
-      data-swatch-id={id}
       style={{
         opacity: isActiveDrag ? 0.4 : 1,
         cursor: canDrag ? (isActiveDrag ? 'grabbing' : 'grab') : 'default',
@@ -2149,12 +2148,10 @@ export default function App() {
           </button>
         </div>
         <div className="header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Undo */}
+          {/* Undo button */}
           <button
             onClick={handleUndo}
-            disabled={history.length === 0}
-            aria-label="Undo"
-            title="Undo"
+            disabled={history.length===0}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: history.length===0?0.5:1, cursor: history.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
             }}
@@ -2164,13 +2161,10 @@ export default function App() {
             <UndoIcon size={14} />
             Undo
           </button>
-
-          {/* Redo */}
+          {/* Redo button (restored) */}
           <button
             onClick={handleRedo}
-            disabled={future.length === 0}
-            aria-label="Redo"
-            title="Redo"
+            disabled={future.length===0}
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: future.length===0?0.5:1, cursor: future.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
             }}
@@ -3294,29 +3288,81 @@ export default function App() {
               })()}
             </div>
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+            {/* Path Info (final) */}
+            <div style={{ 
+              background: '#2a2a2a',
+              borderRadius: 8,
+              border: '1px solid #3a3a3a',
+              padding: 16,
+              color: '#aaa',
+              fontSize: 12,
+              lineHeight: 1.6
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 700, marginBottom: 8 }}>
+                <FolderIcon size={16} color="#d9d9d9" />
+                <span>Find Your Defaults.xml File</span>
+              </div>
+              <div style={{ marginBottom: 10, color: '#ccc' }}>
+                <strong>Windows:</strong> You may need to show hidden folders first (View → Show → Hidden Items in File Explorer)
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ background: '#242424', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>Windows:</div>
+                  <div style={{ fontFamily: 'Fira Mono, monospace', color: '#4a9eff', wordBreak: 'break-all' }}>
+                    C:\\Users\\[your-username]\\AppData\\Roaming\\Steinberg\\Cubase_14 or Nuendo_14\\Presets\\
+                  </div>
+                </div>
+                <div style={{ background: '#242424', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>macOS:</div>
+                  <div style={{ fontFamily: 'Fira Mono, monospace', color: '#4a9eff', wordBreak: 'break-all' }}>
+                    /Users/[your-username]/Library/Preferences/Cubase_14 or Nuendo_14
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
               <button
                 type="button"
                 disabled={paletteAtCapacity}
+                title={paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add this gradient to the palette'}
                 onClick={() => {
-                  if (paletteAtCapacity) return;
-                  handleApplyGradient();
+                  if (paletteAtCapacity || !gradientEditor) return;
+                  const hsvToHex = (h, s, v) => {
+                    s /= 100; v /= 100; const c = v * s; const x = c * (1 - Math.abs(((h / 60) % 2) - 1)); const m = v - c; let r=0,g=0,b=0;
+                    if (h < 60) { r = c; g = x; b = 0; } else if (h < 120) { r = x; g = c; b = 0; } else if (h < 180) { r = 0; g = c; b = x; } else if (h < 240) { r = 0; g = x; b = c; } else if (h < 300) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
+                    const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
+                    return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+                  };
+                  const start = hsvToHex(gradientEditor.startH, gradientEditor.startS, gradientEditor.startV);
+                  const end = hsvToHex(gradientEditor.endH, gradientEditor.endS, gradientEditor.endV);
+                  const steps = gradientSteps;
+                  const newColors = [];
+                  for (let i = 0; i < steps; i++) {
+                    const t = i / (steps - 1);
+                    const sr = parseInt(start.slice(1,3),16), sg = parseInt(start.slice(3,5),16), sb = parseInt(start.slice(5,7),16);
+                    const er = parseInt(end.slice(1,3),16), eg = parseInt(end.slice(3,5),16), eb = parseInt(end.slice(5,7),16);
+                    const r = Math.round(sr + (er - sr) * t);
+                    const g = Math.round(sg + (eg - sg) * t);
+                    const b = Math.round(sb + (eb - sb) * t);
+                    const hex = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`.toUpperCase();
+                    newColors.push({ id: uuidv4(), color: hex });
+                  }
+                  const remainingSlots = MAX_PALETTE_COLORS - colors.length;
+                  const toAdd = newColors.slice(0, remainingSlots);
+                  if (toAdd.length > 0) pushHistory([...colors, ...toAdd]);
                 }}
                 style={{
                   flex: 1,
                   padding: '12px',
                   background: paletteAtCapacity ? '#1f2a3d' : '#1f6bff',
-                  border: '1px solid rgba(44,115,255,0.6)',
+                  border: '1px solid #2a63ff',
                   borderRadius: 8,
                   color: '#fff',
                   fontSize: 14,
                   fontWeight: 700,
                   cursor: paletteAtCapacity ? 'not-allowed' : 'pointer',
-                  opacity: paletteAtCapacity ? 0.5 : 1,
                   transition: 'background 0.2s, transform 0.2s'
                 }}
-                title={paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add this gradient to the palette'}
                 onMouseEnter={(e) => {
                   if (!paletteAtCapacity) {
                     e.currentTarget.style.background = '#1558d6';
