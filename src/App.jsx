@@ -849,6 +849,10 @@ export default function App() {
   const balanceSessionRef = useRef(null);
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
   const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
+  // Armed mode for Screen Eyedropper: press E to arm, next click triggers pick
+  const [screenPickArmed, setScreenPickArmed] = useState(false);
+  const screenPickArmedRef = useRef(false);
+  useEffect(() => { screenPickArmedRef.current = screenPickArmed; }, [screenPickArmed]);
 
   const displayedPercentRaw = isBalancing ? balanceProgress : (balanceScore ?? 0);
   const displayedPercent = Math.round(Math.min(100, Math.max(0, displayedPercentRaw)));
@@ -1258,7 +1262,7 @@ export default function App() {
     handleScreenPickRef.current = handleScreenPickAddNew;
   }, [handleScreenPickAddNew]);
 
-  // Global shortcut: press 'E' to pick any on-screen color and add as a new swatch
+  // Global shortcut: press 'E' to toggle Screen Eyedropper armed mode
   useEffect(() => {
     const onKey = (e) => {
       // Ignore if typing in an input/textarea
@@ -1266,13 +1270,52 @@ export default function App() {
       
       if (e.key.toLowerCase() === 'e') {
         if (e.repeat) return; // avoid auto-repeat spamming
-        e.preventDefault(); // Prevent any default behavior
-        handleScreenPickRef.current();
+        e.preventDefault();
+        // Toggle armed state only if supported and basic guards pass
+        if (!screenPickSupported || !xmlDoc || colors.length === 0 || paletteAtCapacity) {
+          return;
+        }
+        setScreenPickArmed(v => !v);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []); // Empty deps - only register once
+  }, [screenPickSupported, xmlDoc, colors.length, paletteAtCapacity]);
+
+  // When armed, the next pointer down triggers screen pick; Esc or E cancels
+  useEffect(() => {
+    if (!screenPickArmed) return;
+    const onPointerDown = (e) => {
+      // If user clicks the armed banner (cancel control), cancel instead of picking
+      const cancelHost = e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-ep-cancel]') : null;
+      if (cancelHost) {
+        e.preventDefault();
+        e.stopPropagation();
+        setScreenPickArmed(false);
+        return;
+      }
+      // Ensure still valid
+      if (!screenPickSupported || !xmlDoc || colors.length === 0 || paletteAtCapacity) {
+        setScreenPickArmed(false);
+        return;
+      }
+      // Consume event to avoid UI side-effects
+      e.preventDefault();
+      e.stopPropagation();
+      // Trigger synchronous EyeDropper.open()
+      handleScreenPickRef.current();
+      setScreenPickArmed(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setScreenPickArmed(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [screenPickArmed, screenPickSupported, xmlDoc, colors.length, paletteAtCapacity, handleScreenPickRef]);
 
   // Global shortcut: press 'R' to toggle between SWATCH and ROW drag modes
   const toggleDragMode = useCallback(() => {
@@ -2045,19 +2088,37 @@ export default function App() {
             Randomize
           </button>
 
-          {/* Screen Eyedropper */}
+          {/* Screen Eyedropper (Armed toggle) */}
           <button
-            onClick={handleScreenPickAddNew}
-            disabled={!xmlDoc || paletteAtCapacity || !screenPickSupported}
-            title={!xmlDoc ? 'Import XML first' : !screenPickSupported ? 'Screen eyedropper not supported' : paletteAtCapacity ? 'Palette is full' : 'Pick any on-screen color (shortcut: E)'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 0.5 : 1, transition: 'background 0.15s'
+            onClick={() => {
+              if (!xmlDoc || paletteAtCapacity || !screenPickSupported) return;
+              setScreenPickArmed(v => !v);
             }}
-            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
+            disabled={!xmlDoc || paletteAtCapacity || !screenPickSupported}
+            title={!xmlDoc
+              ? 'Import XML first'
+              : !screenPickSupported
+                ? 'Screen eyedropper not supported'
+                : paletteAtCapacity
+                  ? 'Palette is full'
+                  : screenPickArmed
+                    ? 'Eyedropper armed — press E or click banner to cancel'
+                    : 'Press E to arm, then click anywhere to pick'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              background: (!xmlDoc || paletteAtCapacity || !screenPickSupported) ? '#2a2a2a' : (screenPickArmed ? '#1f4a2a' : '#2a2a2a'),
+              color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px',
+              cursor: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer',
+              fontWeight: 600, fontSize: 13,
+              opacity: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 0.5 : 1,
+              transition: 'background 0.15s, box-shadow 0.15s',
+              boxShadow: screenPickArmed ? '0 0 0 2px rgba(90, 240, 140, 0.25)' : 'none'
+            }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = screenPickArmed ? '#225731' : '#333'; }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = screenPickArmed ? '#1f4a2a' : '#2a2a2a'; }}
           >
             <EyedropperIcon />
-            Eyedropper
+            {screenPickArmed ? 'Eyedropper (Armed)' : 'Eyedropper'}
           </button>
         </div>
         <div className="header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -4564,6 +4625,30 @@ export default function App() {
             onClick={e => { e.stopPropagation(); setEyedropper(null); }}
           >
             Eyedropper active — click a swatch to copy its color. Click this banner to cancel.
+          </div>
+        </div>
+      )}
+      {/* Screen Eyedropper Armed overlay */}
+      {screenPickArmed && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 12000, pointerEvents: 'none'
+          }}
+        >
+          <div
+            data-ep-cancel
+            style={{
+              position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(30, 40, 30, 0.95)', color: '#d8ffe6',
+              border: '1px solid rgba(120, 240, 160, 0.5)', borderRadius: 10,
+              padding: '8px 14px', fontWeight: 700, fontSize: 13,
+              boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
+              pointerEvents: 'auto', cursor: 'pointer'
+            }}
+            title="Click to cancel"
+            onClick={(e) => { e.stopPropagation(); setScreenPickArmed(false); }}
+          >
+            Eyedropper armed — click anywhere to pick. Press E or click here to cancel.
           </div>
         </div>
       )}
