@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import './App.css';
 import { saveAs } from 'file-saver';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -525,7 +525,7 @@ function getHueFamily(h) {
 }
 
 // --- Palette Balancer ---
-function balancePalette(colors) {
+function balancePaletteIteration(colors) {
   if (!colors.length) return colors;
   // Convert all to HSL and assign family
   const hslArr = colors.map(c => {
@@ -579,6 +579,76 @@ function balancePalette(colors) {
   return colors.map(({ id }) => ({ id, color: idToColor[id] }));
 }
 
+function calculateHarmonyScore(colors) {
+  if (!colors.length) return 0;
+
+  const groups = {};
+  colors.forEach((entry) => {
+    const { color } = entry;
+    if (isAchromatic(color)) {
+      const [, , l] = hexToHsl(color);
+      groups.grey = groups.grey || [];
+      groups.grey.push({ l, h: null, s: 0 });
+      return;
+    }
+    const [h, s, l] = hexToHsl(color);
+    const family = getHueFamily(h);
+    groups[family] = groups[family] || [];
+    groups[family].push({ h, s, l });
+  });
+
+  let weightedScore = 0;
+  let weightTotal = 0;
+
+  Object.values(groups).forEach((bucket) => {
+    const size = bucket.length;
+    if (size === 0) return;
+    if (size === 1) {
+      weightedScore += 100;
+      weightTotal += 1;
+      return;
+    }
+
+    const sortedByLightness = [...bucket].sort((a, b) => a.l - b.l);
+    const minL = sortedByLightness[0].l;
+    const maxL = sortedByLightness[size - 1].l;
+    const range = Math.max(0.0001, maxL - minL);
+    const idealStep = range / (size - 1);
+
+    let lightnessDeviation = 0;
+    sortedByLightness.forEach((entry, idx) => {
+      const expected = minL + idealStep * idx;
+      lightnessDeviation += Math.abs(entry.l - expected);
+    });
+
+    const normalizedLightness = lightnessDeviation / (size * range);
+
+    const avgSat = sortedByLightness.reduce((sum, entry) => sum + entry.s, 0) / size;
+    const satSpread = sortedByLightness.reduce((sum, entry) => sum + Math.abs(entry.s - avgSat), 0) / size;
+    const normalizedSat = satSpread / Math.max(0.0001, avgSat || 1);
+
+    const rawScore = 100
+      - Math.min(100, normalizedLightness * 120)
+      - Math.min(25, normalizedSat * 25);
+
+    weightedScore += Math.max(0, rawScore) * size;
+    weightTotal += size;
+  });
+
+  return weightTotal ? weightedScore / weightTotal : 0;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function palettesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i].id !== b[i].id) return false;
+    if (a[i].color !== b[i].color) return false;
+  }
+  return true;
+}
+
 export default function App() {
   const [colors, setColors] = useState([]); // [{id, color}]
   const [xmlDoc, setXmlDoc] = useState(null);
@@ -598,24 +668,74 @@ export default function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const gridRef = useRef(null);
+  const mainScrollRef = useRef(null);
   const swatchGridRef = useRef(null); // SWATCH mode grid container
   const [swatchDragReady, setSwatchDragReady] = useState(false);
+  const [isBalancing, setIsBalancing] = useState(false);
+  const [balanceProgress, setBalanceProgress] = useState(0);
+  const [balanceScore, setBalanceScore] = useState(null);
+  const [originalOrder, setOriginalOrder] = useState(null);
+
+  const displayedPercentRaw = isBalancing ? balanceProgress : (balanceScore ?? 0);
+  const displayedPercent = Math.round(Math.min(100, Math.max(0, displayedPercentRaw)));
+  const arcRadius = 52;
+  const arcCircumference = 2 * Math.PI * arcRadius;
+  const arcDashOffset = arcCircumference * (1 - displayedPercent / 100);
+
+  const resetBalanceUi = useCallback(() => {
+    setIsBalancing(false);
+    setBalanceProgress(0);
+    setBalanceScore(null);
+  }, []);
   
   // Track currently dragging item to apply visual state
   const [draggingItemId, setDraggingItemId] = useState(null);
 
   // FLIP animation: store previous rects of swatches between renders
   const prevRectsRef = useRef(new Map());
+  const skipFlipOnceRef = useRef(false);
+
+  const createScrollRestorer = useCallback(() => {
+    if (dragMode !== 'SWATCH') return null;
+    const container = mainScrollRef.current ?? swatchGridRef.current ?? gridRef.current ?? null;
+    if (!container) return null;
+    const saved = {
+      container,
+      top: container.scrollTop,
+      left: container.scrollLeft,
+    };
+    const savedWindow = { x: window.scrollX, y: window.scrollY };
+    return () => {
+      const restore = () => {
+        if (saved.container) {
+          saved.container.scrollTop = saved.top;
+          saved.container.scrollLeft = saved.left;
+        } else {
+          window.scrollTo(savedWindow.x, savedWindow.y);
+        }
+      };
+      requestAnimationFrame(() => {
+        restore();
+        requestAnimationFrame(restore);
+      });
+    };
+  }, [dragMode, gridRef, mainScrollRef, swatchGridRef]);
 
   // Animate swatch reordering transitions in SWATCH mode (post-drop)
   useLayoutEffect(() => {
-    if (dragMode !== 'SWATCH') {
+    if (isBalancing || dragMode !== 'SWATCH') {
       prevRectsRef.current = new Map();
+      skipFlipOnceRef.current = false;
       return;
     }
     if (!swatchGridRef.current) return;
     // Skip while dragging to avoid mid-drag jitter; animate on commit
     if (draggingItemId) return;
+    if (skipFlipOnceRef.current) {
+      prevRectsRef.current = new Map();
+      skipFlipOnceRef.current = false;
+      return;
+    }
 
     const nodes = swatchGridRef.current.querySelectorAll('[data-swatch-id]');
     const currentRects = new Map();
@@ -651,7 +771,7 @@ export default function App() {
     }
 
     prevRectsRef.current = currentRects;
-  }, [colors, dragMode, draggingItemId]);
+  }, [colors, dragMode, draggingItemId, isBalancing]);
 
   // When entering SWATCH mode, defer enabling dragging until providers/sources mount
   useEffect(() => {
@@ -703,11 +823,6 @@ export default function App() {
     // But don't update too often to prevent performance issues
   }, []);
   
-  // Apply the final order when drag ends
-  const handleDragEnd = useCallback(() => {
-    setColors(dragOrderRef.current);
-    setDraggingItemId(null);
-  }, []);
   // Custom color editor state
   const [colorEditor, setColorEditor] = useState(null); // { id, color, h, s, v } or null
   // Gradient color picker state
@@ -729,6 +844,22 @@ export default function App() {
       console.error('Failed to load presets:', e);
     }
   }, []);
+
+  useEffect(() => {
+    if (!colors.length) {
+      if (originalOrder) setOriginalOrder(null);
+      return;
+    }
+    if (!originalOrder) {
+      setOriginalOrder(colors.map((c) => c.id));
+    }
+  }, [colors, originalOrder]);
+
+  const canRestoreOriginal = useMemo(() => {
+    if (!xmlDoc || !originalOrder || originalOrder.length === 0 || colors.length === 0) return false;
+    const idSet = new Set(colors.map((c) => c.id));
+    return originalOrder.some((id) => idSet.has(id));
+  }, [colors, originalOrder, xmlDoc]);
 
   // DnD-kit sensors
   // Sensors removed - @hello-pangea/dnd handles this automatically
@@ -758,11 +889,27 @@ export default function App() {
 
 
   // Helper to push to history (only if changed)
-  const pushHistory = useCallback((newColors) => {
+  const pushHistory = useCallback((newColors, options = {}) => {
+    const { preserveScroll = false } = options;
+    const restoreScroll = preserveScroll ? createScrollRestorer() : null;
+    if (preserveScroll) skipFlipOnceRef.current = true;
     setHistory(h => [...h, colors.map(c => ({ ...c }))]);
     setFuture([]);
     setColors(newColors);
-  }, [colors]);
+    if (restoreScroll) restoreScroll();
+  }, [colors, createScrollRestorer]);
+
+  // Apply the final order when drag ends
+  const handleDragEnd = useCallback(() => {
+    const finalOrder = dragOrderRef.current;
+    setDraggingItemId(null);
+    if (!Array.isArray(finalOrder)) return;
+
+    const orderChanged = finalOrder.length !== colors.length || finalOrder.some((item, index) => item.id !== colors[index]?.id);
+    if (!orderChanged) return;
+
+    pushHistory(finalOrder.slice(), { preserveScroll: true });
+  }, [colors, pushHistory]);
 
   // Screen pick helper (adds a new swatch)
   const handleScreenPickAddNew = useCallback(async () => {
@@ -811,6 +958,7 @@ export default function App() {
     setFuture(f => [colors.map(c => ({ ...c })), ...f]);
     setColors(history[history.length - 1]);
     setHistory(h => h.slice(0, -1));
+    resetBalanceUi();
   };
 
   // Redo
@@ -819,6 +967,7 @@ export default function App() {
     setHistory(h => [...h, colors.map(c => ({ ...c }))]);
     setColors(future[0]);
     setFuture(f => f.slice(1));
+    resetBalanceUi();
   };
 
   // Handle file upload and parse XML
@@ -842,7 +991,9 @@ export default function App() {
         return;
       }
       setXmlDoc(doc);
-      setColors(hexes.map(hex => ({ id: uuidv4(), color: hex })));
+      const imported = hexes.map(hex => ({ id: uuidv4(), color: hex }));
+      setColors(imported);
+      setOriginalOrder(imported.map((c) => c.id));
       setHistory([]);
       setFuture([]);
     } catch (err) {
@@ -1069,6 +1220,31 @@ export default function App() {
     pushHistory(sorted);
   };
 
+  const handleRestoreOriginal = useCallback(() => {
+    if (!canRestoreOriginal) return;
+    const lookup = new Map(colors.map((swatch) => [swatch.id, swatch]));
+    const baseOrder = originalOrder
+      .map((id) => lookup.get(id))
+      .filter(Boolean);
+    if (!baseOrder.length) return;
+    const originalIdSet = new Set(originalOrder);
+    const extras = colors.filter((swatch) => !originalIdSet.has(swatch.id));
+    let reordered = [...baseOrder, ...extras];
+    if (reordered.length !== colors.length) {
+      // Append any remaining stragglers just in case (should not happen but keeps ids intact)
+      const seen = new Set(reordered.map((swatch) => swatch.id));
+      colors.forEach((swatch) => {
+        if (!seen.has(swatch.id)) {
+          reordered.push(swatch);
+          seen.add(swatch.id);
+        }
+      });
+    }
+    const alreadyOriginal = reordered.length === colors.length && reordered.every((swatch, idx) => swatch.id === colors[idx]?.id);
+    if (alreadyOriginal) return;
+    pushHistory(reordered, { preserveScroll: true });
+  }, [canRestoreOriginal, colors, originalOrder, pushHistory]);
+
   // Eyedropper button removed with top toolbar; keep Alt-click on swatches and global screen pick (E)
 
   // Removed focused-swatches screen-pick variant to match new global add-new behavior
@@ -1079,11 +1255,75 @@ export default function App() {
     console.log('Colors:', colors);
   }, [colors]);
 
-  const handleBalancePalette = () => {
-    if (colors.length < 2) return;
-    const balanced = balancePalette(colors, 0.7); // 0.7 = strong but not extreme
-    pushHistory(balanced);
-  };
+  const handleBalancePalette = useCallback(async () => {
+    if (colors.length < 2 || isBalancing) return;
+
+    const originalColors = colors.map((c) => ({ ...c }));
+
+    const restoreScroll = dragMode === 'SWATCH' ? createScrollRestorer() : null;
+
+    const queueScrollRestore = () => {
+      if (!restoreScroll) return;
+      restoreScroll();
+    };
+
+    setIsBalancing(true);
+    setBalanceProgress(0);
+    setBalanceScore(null);
+
+    try {
+      let workingColors = originalColors.map((c) => ({ ...c }));
+      let bestColors = workingColors.map((c) => ({ ...c }));
+      let bestScore = calculateHarmonyScore(workingColors);
+
+      const iterations = Math.max(10, Math.min(60, colors.length * 2));
+
+      for (let step = 0; step < iterations; step += 1) {
+        await sleep(80);
+
+        const nextColors = balancePaletteIteration(workingColors);
+        workingColors = nextColors.map((c) => ({ ...c }));
+    setColors(workingColors);
+    queueScrollRestore();
+
+        const nextScore = calculateHarmonyScore(workingColors);
+
+        if (nextScore >= bestScore - 0.001) {
+          bestScore = nextScore;
+          bestColors = workingColors.map((c) => ({ ...c }));
+        }
+
+        const animatedProgress = Math.min(99, Math.round(((step + 1) / iterations) * 100));
+        setBalanceProgress(animatedProgress);
+        setBalanceScore(Math.round(Math.min(100, nextScore)));
+
+        if (nextScore >= 99.5) {
+          setBalanceProgress(100);
+          break;
+        }
+      }
+
+      await sleep(120);
+
+      const finalColors = bestColors.map((c) => ({ ...c }));
+      const changed = !palettesEqual(originalColors, finalColors);
+
+      if (changed) {
+        setHistory((prev) => [...prev, originalColors]);
+        setFuture([]);
+        setColors(finalColors);
+        queueScrollRestore();
+      } else {
+        setColors(originalColors);
+        queueScrollRestore();
+      }
+
+      setBalanceProgress(100);
+      setBalanceScore(Math.round(Math.min(100, bestScore)));
+    } finally {
+      setIsBalancing(false);
+    }
+  }, [colors, createScrollRestorer, dragMode, isBalancing, setColors, setFuture, setHistory]);
 
   // Save current palette as a preset
   const handleSavePreset = () => {
@@ -1105,6 +1345,7 @@ export default function App() {
   // Load a preset
   const handleLoadPreset = (preset) => {
     const newColors = preset.colors.map(color => ({ id: uuidv4(), color }));
+    setOriginalOrder(newColors.map((c) => c.id));
     pushHistory(newColors);
   };
 
@@ -2744,25 +2985,83 @@ export default function App() {
             </div>
             <button className="btn" style={{ width: '100%', marginTop: 6, background: '#444', color: '#fff', fontWeight: 700, borderRadius: 7, fontSize: 15, boxShadow: '0 1px 4px #0002', border: 'none', padding: '7px 0', transition: 'background 0.15s', outline: 'none' }} onClick={handleApplyGradient} aria-label="Add Gradient" onFocus={e => e.currentTarget.style.boxShadow = '0 0 0 2px #ff4d4d'} onBlur={e => e.currentTarget.style.boxShadow = '0 1px 4px #0002'}>Add Gradient</button>
           </div>
-          {/* Balance Palette button */}
-          <button
-            className="btn"
-            onClick={handleBalancePalette}
-            disabled={colors.length < 2}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: '#232323', borderRadius: 7, fontWeight: 600, color: '#fff', fontSize: 15, boxShadow: '0 1px 4px #0002', border: '1px solid #333', padding: '7px 10px', transition: 'background 0.15s', outline: 'none', opacity: colors.length < 2 ? 0.5 : 1, cursor: colors.length < 2 ? 'not-allowed' : 'pointer', margin: '8px 0 12px 0', minHeight: 36, justifyContent: 'flex-start'
-            }}
-            aria-label="Balance Palette"
-            title="Balance palette: harmonise hue, lightness, and saturation for consistency"
-          >
-            <svg width="18" height="18" fill="none" viewBox="0 0 20 20"><rect width="20" height="20" rx="4" fill="#444"/><path d="M4 10h12M6 7l-2 3 2 3M14 13l2-3-2-3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            <span>Balance Palette</span>
-          </button>
+          {/* Balance Palette control */}
+          <div style={{ width: '100%', margin: '4px 0 8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', marginBottom: 0, letterSpacing: '-0.3px' }}>Balance Palette</div>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleBalancePalette}
+              disabled={colors.length < 2 || isBalancing}
+              style={{
+                width: '100%',
+                background: isBalancing ? '#0f2419' : '#15221b',
+                borderRadius: 12,
+                border: '1px solid #285a3d',
+                boxShadow: '0 8px 20px rgba(12, 40, 26, 0.35)',
+                padding: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+                color: '#f2fff1',
+                fontWeight: 600,
+                fontSize: 15,
+                cursor: colors.length < 2 || isBalancing ? 'not-allowed' : 'pointer',
+                opacity: colors.length < 2 && !isBalancing ? 0.5 : 1,
+                transition: 'background 0.2s ease, transform 0.2s ease',
+                transform: isBalancing ? 'scale(0.99)' : 'scale(1)'
+              }}
+              aria-label="Balance Palette"
+              title="Balance palette: harmonise hue, lightness, and saturation for consistency"
+            >
+              <div style={{ position: 'relative', width: 120, height: 120 }}>
+                <svg width="120" height="120" viewBox="0 0 120 120" style={{ position: 'absolute', inset: 0 }}>
+                  <defs>
+                    <linearGradient id="balanceProgressGradient" x1="0" x2="1" y1="0" y2="0">
+                      <stop offset="0%" stopColor="#2ecc71" />
+                      <stop offset="100%" stopColor="#27ae60" />
+                    </linearGradient>
+                  </defs>
+                  <circle cx="60" cy="60" r={arcRadius} stroke="#1a3526" strokeWidth="10" fill="none" />
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r={arcRadius}
+                    stroke="url(#balanceProgressGradient)"
+                    strokeWidth="10"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={`${arcCircumference} ${arcCircumference}`}
+                    strokeDashoffset={arcDashOffset}
+                    transform="rotate(-90 60 60)"
+                    style={{ transition: 'stroke-dashoffset 0.25s ease-out' }}
+                  />
+                </svg>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 78, height: 78, borderRadius: '50%', background: '#0f1f17', border: '2px solid #285a3d', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px rgba(10, 32, 22, 0.45)' }}>
+                    <svg width="52" height="52" viewBox="0 0 48 48" aria-hidden="true">
+                      <path d="M24 10v20" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M14 18h20" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M18 18l-6 10h12l-6-10z" fill="rgba(46,204,113,0.2)" stroke="#2ecc71" strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M30 18l-6 10h12l-6-10z" fill="rgba(46,204,113,0.2)" stroke="#2ecc71" strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M18 34h12" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M16 38h16" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </button>
+            <span style={{ fontSize: 12, fontWeight: 600, color: isBalancing ? '#7fffb3' : '#2ecc71', textAlign: 'center' }}>
+              {isBalancing ? 'Harmonising - aiming for 100%' : balanceScore !== null ? `Harmony score ≈ ${Math.min(100, Math.max(0, balanceScore))}%` : 'Ready to harmonise'}
+            </span>
+          </div>
+          <div style={{ height: 12 }} />
           {error && <div style={{ color: '#ff4d4d', fontWeight: 600, fontSize: 15, marginTop: 8 }}>{error}</div>}
             {/* Tips (left bottom) */}
         </aside>
   {/* Main content */}
-  <main className="main">
+  <main className="main" ref={mainScrollRef}>
               {/* Swatch Grid Container - Always visible */}
               <div ref={gridRef} style={{ 
                 width: '100%', 
@@ -3018,6 +3317,15 @@ export default function App() {
               <button className="btn" onClick={handleSortByHue} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Hue'} aria-label="Sort by Hue">Sort: Hue</button>
               <button className="btn" onClick={handleSortBySaturation} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Saturation'} aria-label="Sort by Saturation">Sort: Sat</button>
               <button className="btn" onClick={handleSortByLightness} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Lightness'} aria-label="Sort by Lightness">Sort: Light</button>
+              <button
+                className="btn"
+                onClick={handleRestoreOriginal}
+                disabled={!canRestoreOriginal}
+                title={!xmlDoc ? 'Import XML first' : canRestoreOriginal ? 'Restore original import order' : 'Original order unavailable (palette changed)'}
+                aria-label="Restore original order"
+              >
+                Original
+              </button>
               {/* Round-Trip Test removed */}
             </div>
           </div>
