@@ -7,3 +7,5 @@ export { default as PresetsIcon } from './PresetsIcon.jsx';
 export { default as SaveIcon } from './SaveIcon.jsx';
 export { default as LoadIcon } from './LoadIcon.jsx';
 export { default as TrashIcon } from './TrashIcon.jsx';
+export { default as UndoIcon } from './UndoIcon.jsx';
+export { default as RedoIcon } from './RedoIcon.jsx';

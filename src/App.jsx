@@ -7,7 +7,7 @@ import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
-import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon } from './icons';
+import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon } from './icons';
 
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
@@ -2049,7 +2049,7 @@ export default function App() {
             onMouseEnter={(e) => { if (history.length > 0) e.currentTarget.style.background = '#333'; }}
             onMouseLeave={(e) => { if (history.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            <svg width="14" height="14" fill="none" viewBox="0 0 20 20"><path d="M4 10h8a4 4 0 110 8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/><path d="M7 13l-3-3 3-3" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <UndoIcon size={14} />
             Undo
           </button>
 
@@ -2065,7 +2065,7 @@ export default function App() {
             onMouseEnter={(e) => { if (future.length > 0) e.currentTarget.style.background = '#333'; }}
             onMouseLeave={(e) => { if (future.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            <svg width="14" height="14" fill="none" viewBox="0 0 20 20"><path d="M16 10H8a4 4 0 100 8" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/><path d="M13 13l3-3-3-3" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <RedoIcon size={14} />
             Redo
           </button>
 
