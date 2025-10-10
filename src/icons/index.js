@@ -3,3 +3,7 @@ export { default as ExportIcon } from './ExportIcon.jsx';
 export { default as BackupIcon } from './BackupIcon.jsx';
 export { default as AddIcon } from './AddIcon.jsx';
 export { default as EyedropperIcon } from './EyedropperIcon.jsx';
+export { default as PresetsIcon } from './PresetsIcon.jsx';
+export { default as SaveIcon } from './SaveIcon.jsx';
+export { default as LoadIcon } from './LoadIcon.jsx';
+export { default as TrashIcon } from './TrashIcon.jsx';

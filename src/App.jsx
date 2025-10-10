@@ -7,7 +7,7 @@ import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
-import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon } from './icons';
+import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon } from './icons';
 
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
@@ -2094,7 +2094,8 @@ export default function App() {
               }
             }}
           >
-            🗑️ Delete All
+            <TrashIcon />
+            Delete All
           </button>
 
         </div>
@@ -4302,6 +4303,42 @@ export default function App() {
             </div>
           )}
 
+          {/* Preset Library Button (moved here) */}
+          <div style={{ marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => setShowPresetLibrary(true)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: '#222',
+                border: '1px solid #3a3a3a',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'background 0.15s, transform 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#2f2f2f';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#222';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+              title="Browse preset palettes"
+            >
+              <PresetsIcon />
+              <span>Presets</span>
+            </button>
+          </div>
+
           {/* Save Preset Section */}
           <div style={{ marginBottom: 8, opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
             <input
@@ -4344,6 +4381,10 @@ export default function App() {
                 title={colors.length === 0 ? 'Add or import colors before saving' : 'Save the current palette (hex values only)'}
                 style={{
                   width: '100%',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
                   background: colors.length === 0 ? '#232323' : '#2a2a2a',
                   color: '#fff',
                   border: '1px solid #333',
@@ -4358,7 +4399,8 @@ export default function App() {
                 onMouseEnter={e => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
                 onMouseLeave={e => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
               >
-                💾 Save JSON
+                <SaveIcon />
+                Save JSON
               </button>
               <button
                 onClick={() => {
@@ -4407,6 +4449,10 @@ export default function App() {
                 title="Load a palette JSON (hex array)"
                 style={{
                   width: '100%',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
                   background: '#2a2a2a',
                   color: '#fff',
                   border: '1px solid #333',
@@ -4420,7 +4466,8 @@ export default function App() {
                 onMouseEnter={e => { e.currentTarget.style.background = '#333'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = '#2a2a2a'; }}
               >
-                📂 Load JSON
+                <LoadIcon />
+                Load JSON
               </button>
             </div>
           </div>
@@ -4429,40 +4476,6 @@ export default function App() {
 
           {/* Presets List */}
           <div style={{ opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
-            <button
-              type="button"
-              onClick={() => setShowPresetLibrary(true)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                padding: '10px 12px',
-                borderRadius: 8,
-                background: '#222',
-                border: '1px solid #3a3a3a',
-                color: '#fff',
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: 'pointer',
-                transition: 'background 0.15s, transform 0.15s',
-                marginBottom: 12,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#2f2f2f';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#222';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-              title="Browse preset palettes"
-            >
-              <span style={{ fontSize: 16 }}>🎨</span>
-              <span>Presets</span>
-            </button>
-
             {/* Controls Grid */}
             <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '12px 0 6px' }}>Controls</div>
             <div className="btn-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
