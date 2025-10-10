@@ -222,11 +222,11 @@ main .color-grid {
 .app-header {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  padding: 10px 20px;
+  padding: 6px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 50px;
+  min-height: 40px;
   height: auto;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -251,17 +251,17 @@ main .color-grid {
 .app-footer {
   background: var(--panel);
   border-top: 1px solid var(--border);
-  padding: 10px 20px;
+  padding: 6px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 40px;
+  min-height: 32px;
   height: auto;
   flex-shrink: 0;
   font-size: 13px;
   color: var(--muted);
   font-weight: 500;
-  gap: 20px;
+  gap: 16px;
 }
 
 .layout {

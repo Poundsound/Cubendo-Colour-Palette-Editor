@@ -11,6 +11,9 @@ import LogoCubendo from './logo/Logo_Cubendo.svg';
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
 const PREVIEW_SWATCH_LIMIT = 128;
+const DND_ITEM_TYPES = {
+  SWATCH: 'SWATCH',
+};
 
 const PRESET_CARD_BODY_WIDTH = 168;
 
@@ -101,6 +104,8 @@ function hslToHex(h, s, l) {
 
 const randomHex = () => `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
 
+const clamp01 = (value) => Math.max(0, Math.min(1, value));
+
 function hexToHsl(hex) {
   if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return [0, 0, 0];
 
@@ -189,12 +194,12 @@ function DraggableSwatchGrid({
   onSwatchClick,
   selected,
   moveColor,
+  draggingItemId,
   setDraggingItemId,
   onDragEnd,
   canDrag = true,
 }) {
   const ref = useRef(null);
-  const lastMoveTime = useRef(0);
 
   const [{ isDragging }, drag, dragPreview] = useDrag(() => ({
     type: 'SWATCH_GRID',
@@ -223,14 +228,10 @@ function DraggableSwatchGrid({
       canDrop: monitor.canDrop(),
     }),
     hover: (item) => {
-      if (!ref.current || !moveColor) return;
+      if (!ref.current) return;
       const dragIndex = item.index;
       const hoverIndex = index;
       if (dragIndex === hoverIndex) return;
-
-      const now = Date.now();
-      if (now - lastMoveTime.current < 16) return;
-      lastMoveTime.current = now;
 
       moveColor(dragIndex, hoverIndex);
       item.index = hoverIndex;
@@ -239,16 +240,16 @@ function DraggableSwatchGrid({
 
   drag(drop(ref));
 
+  const isActiveDrag = isDragging || draggingItemId === id;
+
   return (
     <div
       ref={ref}
       data-swatch-id={id}
       style={{
-        opacity: isDragging ? 0.4 : 1,
-        cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default',
+        opacity: isActiveDrag ? 0.4 : 1,
+        cursor: canDrag ? (isActiveDrag ? 'grabbing' : 'grab') : 'default',
         position: 'relative',
-        transform: isDragging ? 'scale(0.95)' : 'none',
-        transition: isDragging ? 'none' : 'transform 120ms ease',
       }}
     >
       <SwatchDisplay
@@ -259,92 +260,33 @@ function DraggableSwatchGrid({
         copied={copied}
         onSwatchClick={onSwatchClick}
         selected={selected}
-        isDragging={isDragging}
-        isHoverTarget={!isDragging && isOver && canDrop}
+        isDragging={isActiveDrag}
+        isHoverTarget={!isActiveDrag && isOver && canDrop}
+        isRowDragging={false}
+        canDrag={canDrag}
       />
     </div>
   );
 }
 
-function CustomDragLayer({ colors }) {
-  const { item, isDragging, clientOffset } = useDragLayer((monitor) => ({
-    item: monitor.getItem(),
-    isDragging: monitor.isDragging(),
-    clientOffset: monitor.getClientOffset(),
-  }));
-
-  if (!isDragging || !clientOffset) return null;
-
-  const found = item?.id ? colors.find((c) => c.id === item.id) : undefined;
-  const color = found?.color ?? '#888888';
-
-  const size = 96;
-  const x = clientOffset.x - size / 2;
-  const y = clientOffset.y - size / 2;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        pointerEvents: 'none',
-        zIndex: 4000,
-        transform: `translate(${x}px, ${y}px) scale(1.05)`,
-        boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-        animation: 'dragGlow 600ms ease-in-out infinite',
-      }}
-    >
-      <div style={{ width: size, height: size }}>
-        <SwatchDisplay
-          id={item?.id}
-          color={color}
-          onRemove={() => {}}
-          onCopy={() => {}}
-          copied={false}
-          onSwatchClick={() => {}}
-          selected={false}
-          isDragging
-          isHoverTarget={false}
-        />
-      </div>
-    </div>
-  );
-}
-// Hello-Pangea DND Swatch (kept for compatibility if needed)
-function DraggableSwatch({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected }) {
-  return (
-    <Draggable draggableId={id} index={index} type="SWATCH">
-      {(provided, snapshot) => (
-        <div
-          ref={provided.innerRef}
-          {...provided.draggableProps}
-          {...provided.dragHandleProps}
-          style={{
-            ...provided.draggableProps.style,
-          }}
-        >
-          <SwatchDisplay
-            id={id}
-            color={color}
-            onRemove={onRemove}
-            onCopy={onCopy}
-            copied={copied}
-            onSwatchClick={onSwatchClick}
-            selected={selected}
-            isDragging={snapshot.isDragging}
-          />
-        </div>
-      )}
-    </Draggable>
-  );
-}
-
-function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, selected, isDragging, isHoverTarget, isRowDragging = false }) {
+function SwatchDisplay({
+  id,
+  color,
+  onRemove,
+  onCopy,
+  copied,
+  onSwatchClick,
+  selected,
+  isDragging,
+  isHoverTarget,
+  isRowDragging = false,
+  canDrag = true,
+}) {
   const [isHovered, setIsHovered] = useState(false);
-  
+
   return (
     <div
+      data-swatch-id={id}
       className="sortable-item"
       style={{
         display: 'flex',
@@ -354,17 +296,20 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
         gap: 4,
         position: 'relative',
         outline: selected ? '2px solid #ff4d4d' : 'none',
-        outlineOffset: selected ? 0 : 0,
+        outlineOffset: 0,
         pointerEvents: isDragging ? 'none' : 'auto',
+        opacity: isDragging ? 0.2 : 1,
+        cursor: canDrag ? 'grab' : 'default',
+        touchAction: 'none',
       }}
       tabIndex={0}
       aria-label={`Color swatch ${color}`}
-      onKeyDown={e => {
+      onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           onSwatchClick(id, e);
         }
       }}
-      onDoubleClick={e => onSwatchClick(id, e)}
+      onDoubleClick={(e) => onSwatchClick(id, e)}
       onMouseEnter={() => !isDragging && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -381,7 +326,7 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
           justifyContent: 'center',
           position: 'relative',
           boxShadow: isHovered && !isDragging ? '0 4px 12px #0009' : '0 1px 6px #0006',
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default',
           transition: isDragging ? 'none' : 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
           transform: isHovered && !isDragging ? 'scale(1.05)' : 'scale(1)',
@@ -393,7 +338,6 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
         }}
         title="Double-click to edit, click and hold to reorder"
       >
-        {/* Delete button floating top-right */}
         <button
           data-xbtn="1"
           style={{
@@ -421,12 +365,16 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
             transition: 'opacity 0.15s',
             pointerEvents: 'auto',
           }}
-          onClick={e => { e.stopPropagation(); onRemove(id, e.shiftKey); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(id, e.shiftKey);
+          }}
           title="Remove color"
-          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-          onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
-        >×</button>
-        {/* No individual drag handle needed anymore - rows are dragged as a whole */}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+        >
+          ×
+        </button>
         <div style={{
           position: 'absolute',
           inset: 0,
@@ -435,7 +383,6 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
           pointerEvents: 'none',
         }} />
       </div>
-      {/* Hex code below the swatch, full width, square corners */}
       <span
         data-hex="1"
         style={{
@@ -459,17 +406,17 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
         }}
         title="Click to copy color code"
         tabIndex={0}
-        onMouseDown={e => {
+        onMouseDown={(e) => {
           e.stopPropagation();
           onCopy(id);
         }}
-        onClick={e => {
+        onClick={(e) => {
           e.stopPropagation();
         }}
-        onTouchStart={e => {
+        onTouchStart={(e) => {
           e.stopPropagation();
         }}
-        onKeyDown={e => {
+        onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             onCopy(id);
           }
@@ -572,6 +519,52 @@ function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColo
   );
 }
 
+function CustomDragLayer({ colors }) {
+  const { isDragging, item, currentOffset } = useDragLayer((monitor) => ({
+    isDragging: monitor.isDragging(),
+    item: monitor.getItem(),
+    currentOffset: monitor.getClientOffset(),
+  }));
+
+  if (!isDragging || !item || !currentOffset) {
+    return null;
+  }
+
+  const active = (item.index != null && colors[item.index]) || colors.find((entry) => entry.id === item.id);
+  const hex = active ? active.color : '#000000';
+
+  const size = 64;
+  const x = currentOffset.x - size / 2;
+  const y = currentOffset.y - size / 2;
+
+  return (
+    <div style={{ position: 'fixed', pointerEvents: 'none', inset: 0, zIndex: 1500 }}>
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          transform: `translate(${x}px, ${y}px)`,
+        }}
+      >
+        <div
+          style={{
+            width: size,
+            height: size,
+            borderRadius: 8,
+            border: '2px solid #4a9eff',
+            boxShadow: '0 8px 20px rgba(0, 0, 0, 0.4)',
+            background: hex,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function getHueFamily(h) {
   // h: 0-360, returns a string family
   if (h === null || isNaN(h)) return 'grey';
@@ -586,7 +579,8 @@ function getHueFamily(h) {
 }
 
 // --- Palette Balancer ---
-function balancePaletteIteration(colors) {
+function balancePaletteIteration(colors, options = {}) {
+  const { preserveSaturation = false } = options;
   if (!colors.length) return colors;
   // Convert all to HSL and assign family
   const hslArr = colors.map(c => {
@@ -604,7 +598,7 @@ function balancePaletteIteration(colors) {
   });
   // Balance each family
   let balanced = [];
-  const SATURATION_BOOST = 1.15; // Boost factor for chromatic colors
+  const SATURATION_BOOST = preserveSaturation ? 1 : 1.15; // Boost factor for chromatic colors
   for (const fam in families) {
     const group = families[fam];
     // Sort by lightness (darkest to lightest)
@@ -627,10 +621,28 @@ function balancePaletteIteration(colors) {
           const l = first.l + (last.l - first.l) * t;
           balanced.push({ ...orig, color: hslToHex(0, 0, l) });
         } else {
-          // For chromatic: keep original hue and saturation, interpolate only lightness, then boost sat
-          const l = first.l + (last.l - first.l) * t;
-          let s = Math.min(1, orig.s * SATURATION_BOOST);
-          balanced.push({ ...orig, color: hslToHex(orig.h, s, l) });
+          // For chromatic: keep hue, adjust saturation/lightness depending on mode
+          const baseLightness = first.l + (last.l - first.l) * t;
+
+          if (preserveSaturation) {
+            const pastelCeiling = 0.55;
+            const pastelPull = 0.7;
+            const lowSatDampen = 0.94;
+            const pastelLightAnchor = 0.68;
+            const pastelLightBlend = 0.35;
+
+            const clampTarget = Math.min(orig.s, pastelCeiling);
+            const blendedS = orig.s + (clampTarget - orig.s) * pastelPull;
+            const softenedS = orig.s < 0.22 ? orig.s * lowSatDampen : blendedS;
+            const adjustedS = clamp01(softenedS);
+
+            const adjustedL = clamp01(baseLightness + (pastelLightAnchor - baseLightness) * pastelLightBlend);
+
+            balanced.push({ ...orig, color: hslToHex(orig.h, adjustedS, adjustedL) });
+          } else {
+            const boostedS = Math.min(1, orig.s * SATURATION_BOOST);
+            balanced.push({ ...orig, color: hslToHex(orig.h, boostedS, baseLightness) });
+          }
         }
       }
     }
@@ -701,6 +713,94 @@ function calculateHarmonyScore(colors) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const clonePalette = (palette) => palette.map((entry) => ({ ...entry }));
+
+function BalanceModeToggle({ isGentle, onToggle, disabled, isBalancing }) {
+  const knobLeft = isGentle ? 40 : 4;
+  const knobColor = isGentle ? '#f2994a' : '#2ecc71';
+  const borderColor = isGentle ? '#3a3a3a' : '#3a3a3a';
+  const baseBackground = '#1f1f1f';
+  const hoverBackground = '#262626';
+  const [background, setBackground] = useState(baseBackground);
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={isGentle}
+      disabled={disabled}
+      title={isGentle ? 'Switch back to harmonise mode' : 'Switch to pastelise mode to preserve saturation'}
+      style={{
+        width: 72,
+        height: 32,
+        borderRadius: 999,
+        border: `1px solid ${borderColor}`,
+        background,
+        position: 'relative',
+        padding: 0,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+        transition: 'background 0.2s ease',
+        outline: 'none',
+      }}
+      onMouseEnter={() => {
+        if (disabled) return;
+        setBackground(hoverBackground);
+      }}
+      onMouseLeave={() => {
+        setBackground(baseBackground);
+      }}
+      onFocus={() => {
+        if (disabled) return;
+        setBackground(hoverBackground);
+      }}
+      onBlur={() => setBackground(baseBackground)}
+      aria-label={isGentle ? 'Gentle pastelise mode selected. Activate to switch to harmonise.' : 'Harmonise mode selected. Activate to switch to pastelise.'}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 4,
+          left: knobLeft,
+          width: 28,
+          height: 24,
+          borderRadius: 999,
+          background: knobColor,
+          boxShadow: '0 4px 10px rgba(0,0,0,0.25)',
+          transition: 'left 0.2s ease, background 0.2s ease',
+        }}
+      />
+      <span
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 6px',
+          pointerEvents: 'none',
+        }}
+        aria-hidden="true"
+      >
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#2ecc71', opacity: isGentle ? 0.28 : 0.8, transition: 'opacity 0.2s ease' }} />
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f2994a', opacity: isGentle ? 0.8 : 0.28, transition: 'opacity 0.2s ease' }} />
+      </span>
+      {isBalancing && (
+        <span
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: 999,
+            border: '2px solid rgba(255,255,255,0.15)',
+            pointerEvents: 'none',
+          }}
+          aria-hidden="true"
+        />
+      )}
+    </button>
+  );
+}
+
 function palettesEqual(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
@@ -741,6 +841,8 @@ export default function App() {
   const [isBalancing, setIsBalancing] = useState(false);
   const [balanceProgress, setBalanceProgress] = useState(0);
   const [balanceScore, setBalanceScore] = useState(null);
+  const [balanceMode, setBalanceMode] = useState('vibrant'); // 'vibrant' | 'gentle'
+  const prevColorCountRef = useRef(0);
   const [originalOrder, setOriginalOrder] = useState(null);
   const balanceSessionRef = useRef(null);
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
@@ -751,6 +853,20 @@ export default function App() {
   const arcRadius = 52;
   const arcCircumference = 2 * Math.PI * arcRadius;
   const arcDashOffset = arcCircumference * (1 - displayedPercent / 100);
+
+  const isGentleBalance = balanceMode === 'gentle';
+  const balanceAccentPrimary = isGentleBalance ? '#f2994a' : '#2ecc71';
+  const balanceAccentSecondary = isGentleBalance ? '#f2c94c' : '#27ae60';
+  const balanceBackgroundIdle = isGentleBalance ? '#2c1f12' : '#15221b';
+  const balanceBackgroundActive = isGentleBalance ? '#3a2816' : '#0f2419';
+  const balanceBorder = isGentleBalance ? '#d27a33' : '#285a3d';
+  const balanceInnerBackground = isGentleBalance ? '#2d1e12' : '#0f1f17';
+  const balanceOuterShadow = isGentleBalance ? '0 8px 20px rgba(120, 60, 20, 0.35)' : '0 8px 20px rgba(12, 40, 26, 0.35)';
+  const balanceInnerShadow = isGentleBalance ? '0 10px 20px rgba(120, 60, 20, 0.45)' : '0 10px 20px rgba(10, 32, 22, 0.45)';
+  const balanceMeterBackground = isGentleBalance ? '#3d2212' : '#1a3526';
+  const balanceStatusColor = isGentleBalance ? (isBalancing ? '#ffd9a3' : '#f2994a') : (isBalancing ? '#7fffb3' : '#2ecc71');
+  const balanceButtonText = isGentleBalance ? '#fff3e3' : '#f2fff1';
+  const balanceTriangleFill = isGentleBalance ? 'rgba(242, 153, 74, 0.2)' : 'rgba(46,204,113,0.2)';
 
   const resetBalanceUi = useCallback(() => {
     setIsBalancing(false);
@@ -769,8 +885,7 @@ export default function App() {
   const [draggingItemId, setDraggingItemId] = useState(null);
 
   // FLIP animation: store previous rects of swatches between renders
-  const prevRectsRef = useRef(new Map());
-  const skipFlipOnceRef = useRef(false);
+  // Removed FLIP bookkeeping in minimal mode
 
   const createScrollRestorer = useCallback(() => {
     if (dragMode !== 'SWATCH') return null;
@@ -798,57 +913,7 @@ export default function App() {
     };
   }, [dragMode, gridRef, mainScrollRef, swatchGridRef]);
 
-  // Animate swatch reordering transitions in SWATCH mode (post-drop)
-  useLayoutEffect(() => {
-    if (isBalancing || dragMode !== 'SWATCH') {
-      prevRectsRef.current = new Map();
-      skipFlipOnceRef.current = false;
-      return;
-    }
-    if (!swatchGridRef.current) return;
-    // Skip while dragging to avoid mid-drag jitter; animate on commit
-    if (draggingItemId) return;
-
-    const shouldSkipAnimation = skipFlipOnceRef.current;
-    if (shouldSkipAnimation) {
-      skipFlipOnceRef.current = false;
-    }
-
-    const nodes = swatchGridRef.current.querySelectorAll('[data-swatch-id]');
-    const currentRects = new Map();
-    nodes.forEach((node) => {
-      const id = node.getAttribute('data-swatch-id');
-      if (!id) return;
-      currentRects.set(id, node.getBoundingClientRect());
-    });
-
-    // If we have previous rects, animate from previous to current
-    if (!shouldSkipAnimation && prevRectsRef.current.size) {
-      nodes.forEach((node) => {
-        const id = node.getAttribute('data-swatch-id');
-        const prev = id ? prevRectsRef.current.get(id) : null;
-        const last = id ? currentRects.get(id) : null;
-        if (!id || !prev || !last) return;
-        const dx = prev.left - last.left;
-        const dy = prev.top - last.top;
-        if (dx !== 0 || dy !== 0) {
-          node.style.transition = 'none';
-          node.style.transform = `translate(${dx}px, ${dy}px)`;
-          // Force reflow
-          void node.getBoundingClientRect();
-          node.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
-          node.style.transform = 'translate(0, 0)';
-          const cleanup = () => {
-            node.style.transition = '';
-            node.removeEventListener('transitionend', cleanup);
-          };
-          node.addEventListener('transitionend', cleanup);
-        }
-      });
-    }
-
-    prevRectsRef.current = currentRects;
-  }, [colors, dragMode, draggingItemId, isBalancing]);
+  // Fancy FLIP animations disabled for minimal, robust DnD
 
   useLayoutEffect(() => {
     const container = gridRef.current;
@@ -877,31 +942,33 @@ export default function App() {
   useEffect(() => {
     if (dragMode === 'SWATCH') {
       setSwatchDragReady(false);
-      let raf1 = 0, raf2 = 0;
-      raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => setSwatchDragReady(true));
+      const timer1 = requestAnimationFrame(() => {
+        const timer2 = requestAnimationFrame(() => {
+          setSwatchDragReady(true);
+        });
+        return () => cancelAnimationFrame(timer2);
       });
-      return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+      return () => cancelAnimationFrame(timer1);
     } else {
       setSwatchDragReady(false);
     }
   }, [dragMode]);
 
   // When colors are first populated (e.g., after XML import) in SWATCH mode, ensure drag is ready
-  const prevColorCountRef = useRef(0);
   useEffect(() => {
     const prev = prevColorCountRef.current;
     const curr = colors.length;
     prevColorCountRef.current = curr;
     if (dragMode === 'SWATCH' && prev === 0 && curr > 0) {
       setSwatchDragReady(false);
-      let raf1 = 0, raf2 = 0;
-      raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => setSwatchDragReady(true));
+      const timer1 = requestAnimationFrame(() => {
+        const timer2 = requestAnimationFrame(() => {
+          setSwatchDragReady(true);
+        });
+        return () => cancelAnimationFrame(timer2);
       });
-      return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+      return () => cancelAnimationFrame(timer1);
     }
-    return undefined;
   }, [colors.length, dragMode]);
   
   // Use ref to track the current order without triggering re-renders
@@ -1061,12 +1128,11 @@ export default function App() {
 
   // Helper to push to history (only if changed)
   const pushHistory = useCallback((newColors, options = {}) => {
-    const { preserveScroll = false, skipFlip = false } = options;
-    const restoreScroll = preserveScroll ? createScrollRestorer() : null;
-    if (preserveScroll || skipFlip) skipFlipOnceRef.current = true;
-    setHistory(h => [...h, colors.map(c => ({ ...c }))]);
+  const { preserveScroll = false } = options;
+  const restoreScroll = preserveScroll ? createScrollRestorer() : null;
+    setHistory(h => [...h, clonePalette(colors)]);
     setFuture([]);
-    setColors(newColors);
+    setColors(clonePalette(newColors));
     if (restoreScroll) restoreScroll();
   }, [colors, createScrollRestorer]);
 
@@ -1186,8 +1252,8 @@ export default function App() {
   // Undo
   const handleUndo = () => {
     if (history.length === 0) return;
-    setFuture(f => [colors.map(c => ({ ...c })), ...f]);
-    setColors(history[history.length - 1]);
+    setFuture(f => [clonePalette(colors), ...f]);
+    setColors(clonePalette(history[history.length - 1]));
     setHistory(h => h.slice(0, -1));
     resetBalanceUi();
   };
@@ -1195,8 +1261,8 @@ export default function App() {
   // Redo
   const handleRedo = () => {
     if (future.length === 0) return;
-    setHistory(h => [...h, colors.map(c => ({ ...c }))]);
-    setColors(future[0]);
+    setHistory(h => [...h, clonePalette(colors)]);
+    setColors(clonePalette(future[0]));
     setFuture(f => f.slice(1));
     resetBalanceUi();
   };
@@ -1674,14 +1740,8 @@ export default function App() {
   const handleBalancePalette = useCallback(async () => {
     if (colors.length < 2 || isBalancing) return;
 
-    const originalColors = colors.map((c) => ({ ...c }));
-
-    const restoreScroll = dragMode === 'SWATCH' ? createScrollRestorer() : null;
-
-    const queueScrollRestore = () => {
-      if (!restoreScroll) return;
-      restoreScroll();
-    };
+  const originalColors = clonePalette(colors);
+    const preserveSaturation = balanceMode === 'gentle';
 
     const session = { cancelled: false };
     balanceSessionRef.current = session;
@@ -1694,8 +1754,8 @@ export default function App() {
     let cancelled = false;
 
     try {
-      let workingColors = originalColors.map((c) => ({ ...c }));
-      let bestColors = workingColors.map((c) => ({ ...c }));
+  let workingColors = clonePalette(originalColors);
+  let bestColors = clonePalette(workingColors);
       let bestScore = calculateHarmonyScore(workingColors);
 
       const iterations = Math.max(10, Math.min(60, colors.length * 2));
@@ -1713,8 +1773,8 @@ export default function App() {
           break;
         }
 
-        const nextColors = balancePaletteIteration(workingColors);
-        workingColors = nextColors.map((c) => ({ ...c }));
+        const nextColors = balancePaletteIteration(workingColors, { preserveSaturation });
+  workingColors = clonePalette(nextColors);
 
         if (shouldAbort()) {
           cancelled = true;
@@ -1722,7 +1782,6 @@ export default function App() {
         }
 
         setColors(workingColors);
-        queueScrollRestore();
 
         if (shouldAbort()) {
           cancelled = true;
@@ -1733,7 +1792,7 @@ export default function App() {
 
         if (nextScore >= bestScore - 0.001) {
           bestScore = nextScore;
-          bestColors = workingColors.map((c) => ({ ...c }));
+          bestColors = clonePalette(workingColors);
         }
 
         const animatedProgress = Math.min(99, Math.round(((step + 1) / iterations) * 100));
@@ -1762,17 +1821,13 @@ export default function App() {
         return;
       }
 
-      const finalColors = bestColors.map((c) => ({ ...c }));
+      const finalColors = clonePalette(bestColors);
       const changed = !palettesEqual(originalColors, finalColors);
 
       if (changed) {
-        setHistory((prev) => [...prev, originalColors]);
+        setHistory((prev) => [...prev, clonePalette(originalColors)]);
         setFuture([]);
-        setColors(finalColors);
-        queueScrollRestore();
-      } else {
-        setColors(originalColors);
-        queueScrollRestore();
+        setColors(clonePalette(finalColors));
       }
 
       setBalanceProgress(100);
@@ -1787,7 +1842,7 @@ export default function App() {
       }
       setIsBalancing(false);
     }
-  }, [colors, createScrollRestorer, dragMode, isBalancing, setColors, setFuture, setHistory]);
+  }, [balanceMode, colors, isBalancing, setColors, setFuture, setHistory]);
 
   // Save current palette as a preset
   const handleSavePreset = () => {
@@ -4006,9 +4061,17 @@ export default function App() {
               Add Gradient
             </button>
           </div>
-          {/* Balance Palette control */}
-          <div style={{ width: '100%', margin: '4px 0 8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', marginBottom: 0, letterSpacing: '-0.3px' }}>Balance Palette</div>
+          {/* Harmony control */}
+          <div style={{ width: '100%', margin: '4px 0 8px 0', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', letterSpacing: '-0.3px' }}>Balance Mode</div>
+              <BalanceModeToggle
+                isGentle={isGentleBalance}
+                onToggle={() => setBalanceMode((prev) => (prev === 'gentle' ? 'vibrant' : 'gentle'))}
+                disabled={isBalancing}
+                isBalancing={isBalancing}
+              />
+            </div>
             <button
               type="button"
               className="btn"
@@ -4016,16 +4079,16 @@ export default function App() {
               disabled={colors.length < 2 || isBalancing}
               style={{
                 width: '100%',
-                background: isBalancing ? '#0f2419' : '#15221b',
+                background: isBalancing ? balanceBackgroundActive : balanceBackgroundIdle,
                 borderRadius: 12,
-                border: '1px solid #285a3d',
-                boxShadow: '0 8px 20px rgba(12, 40, 26, 0.35)',
+                border: `1px solid ${balanceBorder}`,
+                boxShadow: balanceOuterShadow,
                 padding: '12px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: 8,
-                color: '#f2fff1',
+                color: balanceButtonText,
                 fontWeight: 600,
                 fontSize: 15,
                 cursor: colors.length < 2 || isBalancing ? 'not-allowed' : 'pointer',
@@ -4034,17 +4097,19 @@ export default function App() {
                 transform: isBalancing ? 'scale(0.99)' : 'scale(1)'
               }}
               aria-label="Balance Palette"
-              title="Balance palette: harmonise hue, lightness, and saturation for consistency"
+              title={isGentleBalance
+                ? 'Gentle balance: harmonise while preserving pastel saturation'
+                : 'Balance palette: harmonise hue, lightness, and saturation for consistency'}
             >
               <div style={{ position: 'relative', width: 120, height: 120 }}>
                 <svg width="120" height="120" viewBox="0 0 120 120" style={{ position: 'absolute', inset: 0 }}>
                   <defs>
                     <linearGradient id="balanceProgressGradient" x1="0" x2="1" y1="0" y2="0">
-                      <stop offset="0%" stopColor="#2ecc71" />
-                      <stop offset="100%" stopColor="#27ae60" />
+                      <stop offset="0%" stopColor={balanceAccentPrimary} />
+                      <stop offset="100%" stopColor={balanceAccentSecondary} />
                     </linearGradient>
                   </defs>
-                  <circle cx="60" cy="60" r={arcRadius} stroke="#1a3526" strokeWidth="10" fill="none" />
+                  <circle cx="60" cy="60" r={arcRadius} stroke={balanceMeterBackground} strokeWidth="10" fill="none" />
                   <circle
                     cx="60"
                     cy="60"
@@ -4060,134 +4125,145 @@ export default function App() {
                   />
                 </svg>
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ width: 78, height: 78, borderRadius: '50%', background: '#0f1f17', border: '2px solid #285a3d', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px rgba(10, 32, 22, 0.45)' }}>
+                  <div style={{ width: 78, height: 78, borderRadius: '50%', background: balanceInnerBackground, border: `2px solid ${balanceBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: balanceInnerShadow }}>
                     <svg width="52" height="52" viewBox="0 0 48 48" aria-hidden="true">
-                      <path d="M24 10v20" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
-                      <path d="M14 18h20" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
-                      <path d="M18 18l-6 10h12l-6-10z" fill="rgba(46,204,113,0.2)" stroke="#2ecc71" strokeWidth="1.8" strokeLinejoin="round" />
-                      <path d="M30 18l-6 10h12l-6-10z" fill="rgba(46,204,113,0.2)" stroke="#2ecc71" strokeWidth="1.8" strokeLinejoin="round" />
-                      <path d="M18 34h12" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
-                      <path d="M16 38h16" stroke="#2ecc71" strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M24 10v20" stroke={balanceAccentPrimary} strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M14 18h20" stroke={balanceAccentPrimary} strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M18 18l-6 10h12l-6-10z" fill={balanceTriangleFill} stroke={balanceAccentPrimary} strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M30 18l-6 10h12l-6-10z" fill={balanceTriangleFill} stroke={balanceAccentPrimary} strokeWidth="1.8" strokeLinejoin="round" />
+                      <path d="M18 34h12" stroke={balanceAccentPrimary} strokeWidth="2.2" strokeLinecap="round" />
+                      <path d="M16 38h16" stroke={balanceAccentPrimary} strokeWidth="2.2" strokeLinecap="round" />
                     </svg>
                   </div>
                 </div>
               </div>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{isBalancing ? 'Balancing...' : isGentleBalance ? 'Pastelise' : 'Harmonise'}</div>
             </button>
-            <span style={{ fontSize: 12, fontWeight: 600, color: isBalancing ? '#7fffb3' : '#2ecc71', textAlign: 'center' }}>
-              {isBalancing ? 'Harmonising - aiming for 100%' : balanceScore !== null ? `Harmony score ≈ ${Math.min(100, Math.max(0, balanceScore))}%` : 'Ready to harmonise'}
+            <span style={{ fontSize: 12, fontWeight: 600, color: balanceStatusColor, textAlign: 'center' }}>
+              {isBalancing
+                ? (isGentleBalance ? 'Gentle harmonising — preserving pastels' : 'Harmonising - aiming for 100%')
+                : balanceScore !== null
+                  ? `Harmony score ≈ ${Math.min(100, Math.max(0, balanceScore))}%`
+                  : isGentleBalance ? 'Gentle mode ready' : 'Ready to harmonise'}
             </span>
           </div>
-          <div style={{ height: 12 }} />
-          {error && <div style={{ color: '#ff4d4d', fontWeight: 600, fontSize: 15, marginTop: 8 }}>{error}</div>}
-            {/* Tips (left bottom) */}
         </aside>
-  {/* Main content */}
-  <main className="main" ref={mainScrollRef}>
-              {/* Swatch Grid Container - Always visible */}
-              <div ref={gridRef} style={{ 
-                width: '100%', 
-                minHeight: '60vh',
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: 8,
-                background: '#1a1a1a',
-                borderRadius: 8,
-                padding: 16,
-                border: '1px solid #2f2f2f'
-              }}>
-              {colors.length === 0 ? (
-                // Empty state
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minHeight: '50vh',
-                  color: '#666',
-                  gap: 16
-                }}>
-                  <div style={{ fontSize: 64 }}>🎨</div>
-                  <div style={{ fontSize: 18, fontWeight: 600 }}>No Colors Yet</div>
-                  <div style={{ fontSize: 14, textAlign: 'center', maxWidth: 400, lineHeight: 1.6 }}>
-                    Import a Defaults.xml file or click "+ Add Color" to get started
-                  </div>
-                </div>
-              ) : dragMode === 'ROW' ? (
-                // ROW MODE: Drag entire rows via handles using @hello-pangea/dnd
-                <DragDropContext onDragEnd={onDragEnd}>
-                  <div>
-                    <Droppable droppableId="palette-rows" type="ROW">
-                      {(rowProvided) => (
-                        <div
-                          ref={rowProvided.innerRef}
-                          {...rowProvided.droppableProps}
-                          style={{ width: '100%' }}
-                        >
-                          {(() => {
-                            const rows = [];
-                            for (let start = 0; start < colors.length; start += columns) {
-                              const end = Math.min(start + columns, colors.length);
-                              const rowIndex = Math.floor(start / columns);
-                              const rowColors = colors.slice(start, end);
-                              rows.push({ start, end, rowIndex, colors: rowColors });
-                            }
-                            
-                            return rows.map((row) => (
-                              <DraggableRow
-                                key={`row-${row.rowIndex}`}
-                                rowId={`row-${row.rowIndex}`}
-                                rowIndex={row.rowIndex}
-                                colors={row.colors}
-                                onSwatchClick={handleSwatchClick}
-                                handleRemoveColor={handleRemoveColor}
-                                onCopyColor={handleCopyColor}
-                                copiedIndex={copiedIndex}
-                                columns={columns}
-                                canDrag={row.colors.length >= columns}
-                              />
-                            ));
-                          })()}
-                          {rowProvided.placeholder}
-                        </div>
-                      )}
-                    </Droppable>
-                  </div>
-                </DragDropContext>
-              ) : (
-                // SWATCH MODE: Use react-dnd for proper grid-based dragging
-                <DndProvider backend={HTML5Backend}>
-                  <CustomDragLayer colors={colors} />
-                  <div
-                    ref={swatchGridRef}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(8, minmax(0, 1fr))',
-                      gap: 8,
-                      width: '100%',
-                    }}
-                  >
-                    {colors.map((c, index) => (
-                      <DraggableSwatchGrid
-                        key={c.id}
-                        id={c.id}
-                        index={index}
-                        color={c.color}
-                        onRemove={handleRemoveColor}
-                        onCopy={handleCopyColor}
-                        copied={copiedIndex === c.id}
-                        onSwatchClick={handleSwatchClick}
-                        selected={false}
-                        moveColor={moveColor}
-                        draggingItemId={draggingItemId}
-                        setDraggingItemId={setDraggingItemId}
-                        onDragEnd={handleDragEnd}
-                        canDrag={swatchDragReady}
-                      />
-                    ))}
-                  </div>
-                </DndProvider>
-              )}
+
+        <main className="main" ref={mainScrollRef}>
+          <div
+            ref={gridRef}
+            style={{
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              background: '#1a1a1a',
+              borderRadius: 8,
+              padding: 16,
+              border: '1px solid #2f2f2f',
+              flex: '1 1 auto',
+              minHeight: 0,
+            }}
+          >
+            {error && (
+              <div
+                role="alert"
+                style={{
+                  background: '#3b1f1f',
+                  border: '1px solid #6b2a2a',
+                  color: '#ffb0b0',
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                {error}
               </div>
+            )}
+            {colors.length === 0 ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '50vh',
+                color: '#666',
+                gap: 16,
+              }}>
+                <div style={{ fontSize: 64 }}>🎨</div>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>No Colors Yet</div>
+                <div style={{ fontSize: 14, textAlign: 'center', maxWidth: 400, lineHeight: 1.6 }}>
+                  Import a Defaults.xml file or click "+ Add Color" to get started
+                </div>
+              </div>
+            ) : dragMode === 'ROW' ? (
+              <DragDropContext onDragEnd={onDragEnd}>
+                <Droppable droppableId="palette-rows" type="ROW">
+                  {(rowProvided) => (
+                    <div ref={rowProvided.innerRef} {...rowProvided.droppableProps} style={{ width: '100%' }}>
+                      {(() => {
+                        const rows = [];
+                        for (let start = 0; start < colors.length; start += columns) {
+                          const end = Math.min(start + columns, colors.length);
+                          const rowIndex = Math.floor(start / columns);
+                          rows.push({ rowIndex, colors: colors.slice(start, end) });
+                        }
+                        return rows.map((row) => (
+                          <DraggableRow
+                            key={`row-${row.rowIndex}`}
+                            rowId={`row-${row.rowIndex}`}
+                            rowIndex={row.rowIndex}
+                            colors={row.colors}
+                            onSwatchClick={handleSwatchClick}
+                            handleRemoveColor={handleRemoveColor}
+                            onCopyColor={handleCopyColor}
+                            copiedIndex={copiedIndex}
+                            columns={columns}
+                            canDrag={row.colors.length >= columns}
+                          />
+                        ));
+                      })()}
+                      {rowProvided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            ) : (
+              <DndProvider backend={HTML5Backend}>
+                <CustomDragLayer colors={colors} />
+                <div
+                  ref={swatchGridRef}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(8, minmax(0, 1fr))',
+                    gap: 8,
+                    width: '100%',
+                  }}
+                >
+                  {colors.map((c, swatchIndex) => (
+                    <DraggableSwatchGrid
+                      key={c.id}
+                      id={c.id}
+                      index={swatchIndex}
+                      color={c.color}
+                      onRemove={handleRemoveColor}
+                      onCopy={handleCopyColor}
+                      copied={copiedIndex === c.id}
+                      onSwatchClick={handleSwatchClick}
+                      selected={false}
+                      moveColor={moveColor}
+                      draggingItemId={draggingItemId}
+                      setDraggingItemId={setDraggingItemId}
+                      onDragEnd={handleDragEnd}
+                      canDrag={swatchDragReady}
+                    />
+                  ))}
+                </div>
+              </DndProvider>
+            )}
+          </div>
         </main>
         {/* Right Sidebar: Presets Panel */}
         <aside className="sidebar right" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
