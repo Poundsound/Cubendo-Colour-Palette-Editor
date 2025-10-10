@@ -9,6 +9,64 @@ import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils
 import LogoCubendo from './logo/Logo_Cubendo.svg';
 
 const MAX_PALETTE_COLORS = 128;
+const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
+const PREVIEW_SWATCH_LIMIT = 128;
+
+const PRESET_CARD_BODY_WIDTH = 168;
+
+const SOCIAL_ICON_RENDERERS = {
+  youtube: () => (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <path
+        d="M10 4c-3.3 0-5.9.3-6.8.4-.8.1-1.4.7-1.6 1.5C1.4 7 1.2 8.5 1.2 10s.2 3 .4 3.9c.2.8.8 1.4 1.6 1.5.9.1 3.5.4 6.8.4s5.9-.3 6.8-.4c.8-.1 1.4-.7 1.6-1.5.2-.9.4-2.4.4-3.9s-.2-3-.4-3.9c-.2-.8-.8-1.4-1.6-1.5C15.9 4.3 13.3 4 10 4Zm-2 4.5 5 3-5 3v-6Z"
+        fill="currentColor"
+      />
+    </svg>
+  ),
+  globe: () => (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <path
+        d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm5.53 7h-2.36c-.19-1.57-.72-3.05-1.54-4.25A6.02 6.02 0 0 1 15.53 9ZM10 3.5c.46 0 1.58 1.36 2.05 3.5H7.95C8.42 4.86 9.54 3.5 10 3.5ZM7.3 9h5.4c.07.5.1 1 .1 1.5 0 .5-.03 1-.1 1.5H7.3A15.8 15.8 0 0 1 7.2 10.5c0-.5.03-1 .1-1.5ZM4.47 11h2.36c.19 1.57.72 3.05 1.54 4.25A6.02 6.02 0 0 1 4.47 11Zm2.36-2H4.47A6.02 6.02 0 0 1 8.37 4.75C7.55 5.95 7.02 7.43 6.83 9Zm2.12 7.5c-.46 0-1.58-1.36-2.05-3.5h4.1c-.47 2.14-1.59 3.5-2.05 3.5Zm1.86-1.25c.82-1.2 1.35-2.68 1.54-4.25h2.36a6.02 6.02 0 0 1-3.9 4.25Z"
+        fill="currentColor"
+      />
+    </svg>
+  ),
+};
+
+const CURATED_PRESET_META = {
+  'cpe-preset-poundsound': {
+    title: 'PoundSound',
+    subtitle: 'Custom colour palette',
+    socialLinks: [
+      {
+        icon: 'youtube',
+        label: 'YouTube',
+        url: 'https://youtube.com/@poundsound?si=XLQiDHDwN_90E1Vn',
+      },
+      {
+        icon: 'globe',
+        label: 'Website',
+        url: 'https://www.poundsound.uk',
+      },
+    ],
+  },
+  'cpe-preset-jason-graves': {
+    title: 'Jason Graves',
+    subtitle: 'Award winning composer',
+    socialLinks: [
+      {
+        icon: 'youtube',
+        label: 'YouTube',
+        url: 'https://www.youtube.com/@JasonGravesMusic'
+      },
+      {
+        icon: 'globe',
+        label: 'Website',
+        url: 'https://jasongraves.com/'
+      }
+    ],
+  },
+};
 
 function hslToHex(h, s, l) {
   const hue = ((h % 360) + 360) % 360;
@@ -425,7 +483,7 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
 
 // Row component using @hello-pangea/dnd's Draggable
 // Row component with drag handle for row-level reordering
-function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, setCopiedIndex, copiedIndex, columns, canDrag }) {
+function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, onCopyColor, copiedIndex, columns, canDrag }) {
   return (
     <Draggable draggableId={rowId} index={rowIndex} type="ROW" isDragDisabled={!canDrag}>
       {(provided, snapshot) => {
@@ -498,7 +556,7 @@ function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColo
                 id={c.id}
                 color={c.color}
                 onRemove={handleRemoveColor}
-                onCopy={setCopiedIndex}
+                onCopy={onCopyColor}
                 copied={copiedIndex === c.id}
                 onSwatchClick={onSwatchClick}
                 selected={false}
@@ -660,6 +718,7 @@ export default function App() {
   const [gradientEndPct, setGradientEndPct] = useState(60); // 0-100, default 60%
   const [gradientSteps, setGradientSteps] = useState(8);
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const copyTimeoutRef = useRef(null);
   const [gradientSaturation, setGradientSaturation] = useState(1.0);
   const [editingSat, setEditingSat] = useState(false);
   const [editingEnd, setEditingEnd] = useState(false);
@@ -670,6 +729,8 @@ export default function App() {
   const [dragMode, setDragMode] = useState('SWATCH'); // 'SWATCH' or 'ROW'
   const [showHelp, setShowHelp] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showPresetLibrary, setShowPresetLibrary] = useState(false);
+  const [curatedPresets, setCuratedPresets] = useState([]);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [pendingXmlFile, setPendingXmlFile] = useState(null);
   const [importModalError, setImportModalError] = useState('');
@@ -681,6 +742,7 @@ export default function App() {
   const [balanceProgress, setBalanceProgress] = useState(0);
   const [balanceScore, setBalanceScore] = useState(null);
   const [originalOrder, setOriginalOrder] = useState(null);
+  const balanceSessionRef = useRef(null);
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
   const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
 
@@ -694,6 +756,13 @@ export default function App() {
     setIsBalancing(false);
     setBalanceProgress(0);
     setBalanceScore(null);
+  }, []);
+
+  const cancelBalance = useCallback(() => {
+    const session = balanceSessionRef.current;
+    if (session && !session.cancelled) {
+      session.cancelled = true;
+    }
   }, []);
   
   // Track currently dragging item to apply visual state
@@ -877,6 +946,58 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      const modules = import.meta.glob('./presets/*.json', {
+        eager: true,
+        import: 'default',
+      });
+
+      const loaded = Object.entries(modules).flatMap(([path, payload]) => {
+        const rawColors = Array.isArray(payload)
+          ? payload
+          : (payload && Array.isArray(payload.colors) ? payload.colors : []);
+        if (!rawColors.length) return [];
+
+        const fileName = path.split('/').pop() || 'preset';
+        const baseName = fileName.replace(/\.json$/i, '');
+        const slug = baseName
+          .toString()
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || baseName.toLowerCase();
+
+        if (slug === 'cpe-preset-test') {
+          return [];
+        }
+
+        const meta = CURATED_PRESET_META[slug] || {};
+        const colors = rawColors.map((hex) =>
+          typeof hex === 'string' ? hex.trim().toUpperCase() : ''
+        ).filter((hex) => /^#[0-9A-F]{6}$/.test(hex));
+        if (!colors.length) return [];
+
+        return [{
+          id: `curated-${slug}`,
+          name: meta.title || baseName,
+          description: meta.subtitle || '',
+          colors,
+          colorCount: colors.length,
+          createdAt: null,
+          slug,
+          metaKey: slug,
+          source: 'curated',
+          socialLinks: meta.socialLinks || [],
+        }];
+      });
+
+      setCuratedPresets(loaded);
+    } catch (err) {
+      console.error('Failed to load curated presets:', err);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!colors.length) {
       if (originalOrder) setOriginalOrder(null);
       return;
@@ -891,6 +1012,25 @@ export default function App() {
     const idSet = new Set(colors.map((c) => c.id));
     return originalOrder.some((id) => idSet.has(id));
   }, [colors, originalOrder, xmlDoc]);
+
+  const presetLibrary = useMemo(() => {
+    const unique = new Map();
+    [...curatedPresets, ...presets].forEach((preset) => {
+      if (!preset || !Array.isArray(preset.colors)) return;
+      unique.set(preset.id ?? `${preset.name}-${unique.size}`, preset);
+    });
+    const ordered = Array.from(unique.values());
+    ordered.sort((a, b) => {
+      const keyA = (a.metaKey || a.slug || '').toLowerCase();
+      const keyB = (b.metaKey || b.slug || '').toLowerCase();
+      const isMarcusA = keyA.includes('poundsound');
+      const isMarcusB = keyB.includes('poundsound');
+      if (isMarcusA && !isMarcusB) return -1;
+      if (!isMarcusA && isMarcusB) return 1;
+      return 0;
+    });
+    return ordered;
+  }, [curatedPresets, presets]);
 
   // DnD-kit sensors
   // Sensors removed - @hello-pangea/dnd handles this automatically
@@ -961,6 +1101,62 @@ export default function App() {
       console.debug('Screen pick cancelled or failed:', err);
     }
   }, [colors, pushHistory]);
+
+  const handleCopyColor = useCallback((id) => {
+    const target = colors.find((swatch) => swatch.id === id);
+    if (!target) return;
+    const hexValue = target.color;
+
+    const markCopied = () => {
+      setError((prev) => (prev === COPY_ERROR_MESSAGE ? '' : prev));
+      setCopiedIndex(id);
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopiedIndex(null);
+        copyTimeoutRef.current = null;
+      }, 1500);
+    };
+
+    const fallbackCopy = () => {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = hexValue;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        markCopied();
+      } catch (fallbackErr) {
+        console.error('Clipboard fallback copy failed:', fallbackErr);
+        setCopiedIndex(null);
+        setError(COPY_ERROR_MESSAGE);
+      }
+    };
+
+    try {
+      const hasClipboardApi = typeof navigator !== 'undefined'
+        && navigator.clipboard
+        && typeof navigator.clipboard.writeText === 'function';
+
+      if (hasClipboardApi) {
+        navigator.clipboard.writeText(hexValue)
+          .then(markCopied)
+          .catch(() => {
+            fallbackCopy();
+          });
+      } else {
+        fallbackCopy();
+      }
+    } catch (errCopy) {
+      console.error('Clipboard copy failed:', errCopy);
+      fallbackCopy();
+    }
+  }, [colors, setError]);
 
   // Global shortcut: press 'E' to pick any on-screen color and add as a new swatch
   useEffect(() => {
@@ -1145,9 +1341,11 @@ export default function App() {
 
   const handleRandomizePalette = () => {
     if (colors.length === 0) return;
+    cancelBalance();
     const randomized = colors.map((swatch) => ({ ...swatch, color: randomHex() }));
     pushHistory(randomized, { preserveScroll: true, skipFlip: true });
     setError('');
+    resetBalanceUi();
   };
 
   // Compute end color based on start color and percentage, clamped so 100% is not pure white
@@ -1466,6 +1664,13 @@ export default function App() {
     console.log('Colors:', colors);
   }, [colors]);
 
+  useEffect(() => () => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = null;
+    }
+  }, []);
+
   const handleBalancePalette = useCallback(async () => {
     if (colors.length < 2 || isBalancing) return;
 
@@ -1478,9 +1683,15 @@ export default function App() {
       restoreScroll();
     };
 
+    const session = { cancelled: false };
+    balanceSessionRef.current = session;
+    const shouldAbort = () => session.cancelled || balanceSessionRef.current !== session;
+
     setIsBalancing(true);
     setBalanceProgress(0);
     setBalanceScore(null);
+
+    let cancelled = false;
 
     try {
       let workingColors = originalColors.map((c) => ({ ...c }));
@@ -1490,12 +1701,33 @@ export default function App() {
       const iterations = Math.max(10, Math.min(60, colors.length * 2));
 
       for (let step = 0; step < iterations; step += 1) {
+        if (shouldAbort()) {
+          cancelled = true;
+          break;
+        }
+
         await sleep(80);
+
+        if (shouldAbort()) {
+          cancelled = true;
+          break;
+        }
 
         const nextColors = balancePaletteIteration(workingColors);
         workingColors = nextColors.map((c) => ({ ...c }));
-    setColors(workingColors);
-    queueScrollRestore();
+
+        if (shouldAbort()) {
+          cancelled = true;
+          break;
+        }
+
+        setColors(workingColors);
+        queueScrollRestore();
+
+        if (shouldAbort()) {
+          cancelled = true;
+          break;
+        }
 
         const nextScore = calculateHarmonyScore(workingColors);
 
@@ -1509,12 +1741,26 @@ export default function App() {
         setBalanceScore(Math.round(Math.min(100, nextScore)));
 
         if (nextScore >= 99.5) {
+          if (shouldAbort()) {
+            cancelled = true;
+            break;
+          }
           setBalanceProgress(100);
           break;
         }
       }
 
+      if (cancelled || shouldAbort()) {
+        cancelled = true;
+        return;
+      }
+
       await sleep(120);
+
+      if (shouldAbort()) {
+        cancelled = true;
+        return;
+      }
 
       const finalColors = bestColors.map((c) => ({ ...c }));
       const changed = !palettesEqual(originalColors, finalColors);
@@ -1532,6 +1778,13 @@ export default function App() {
       setBalanceProgress(100);
       setBalanceScore(Math.round(Math.min(100, bestScore)));
     } finally {
+      if (balanceSessionRef.current === session) {
+        balanceSessionRef.current = null;
+      }
+      if (cancelled || session.cancelled) {
+        setBalanceProgress(0);
+        setBalanceScore(null);
+      }
       setIsBalancing(false);
     }
   }, [colors, createScrollRestorer, dragMode, isBalancing, setColors, setFuture, setHistory]);
@@ -2254,6 +2507,29 @@ export default function App() {
                     <div style={{ fontSize: 12, fontWeight: 600, color: '#aaa' }}>Preview</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>Steps:</span>
+                      <input
+                        type="number"
+                        min={2}
+                        max={8}
+                        value={gradientSteps}
+                        onChange={(e) => {
+                          const next = Number(e.target.value);
+                          const clamped = Number.isFinite(next) ? Math.min(8, Math.max(2, next)) : 2;
+                          setGradientSteps(clamped);
+                        }}
+                        style={{
+                          width: 46,
+                          fontSize: 12,
+                          borderRadius: 4,
+                          border: '1px solid #444',
+                          background: '#161616',
+                          color: '#fff',
+                          padding: '2px 6px',
+                          textAlign: 'center',
+                          fontWeight: 600
+                        }}
+                        aria-label="Gradient steps"
+                      />
                       <button 
                         onClick={() => setGradientSteps(4)} 
                         style={{ 
@@ -2792,6 +3068,274 @@ export default function App() {
         </div>
       )}
 
+        {showPresetLibrary && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.82)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 13000,
+              backdropFilter: 'blur(5px)'
+            }}
+            onClick={() => setShowPresetLibrary(false)}
+          >
+            <div
+              style={{
+                width: 'min(960px, 90vw)',
+                maxHeight: '80vh',
+                overflow: 'hidden',
+                borderRadius: 16,
+                border: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: '0 22px 45px rgba(0,0,0,0.55)',
+                background: 'linear-gradient(160deg, #101014 0%, #161820 35%, #101014 100%)',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Preset Library</div>
+                  <div style={{ fontSize: 13, color: '#c5d1ff', marginTop: 4 }}>Browse saved palettes or curated collections.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPresetLibrary(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 999,
+                    padding: '6px 14px',
+                    color: '#fff',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div style={{ padding: 24, overflowY: 'auto' }}>
+                {presetLibrary.length === 0 ? (
+                  <div style={{
+                    color: '#9ca8d9',
+                    fontSize: 14,
+                    textAlign: 'center',
+                    padding: '40px 20px',
+                    borderRadius: 12,
+                    border: '1px dashed rgba(255,255,255,0.12)',
+                    background: 'rgba(255,255,255,0.03)'
+                  }}>
+                    Save a palette or import preset packs to see them here.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    {presetLibrary.map((preset) => {
+                      const previewColors = preset.colors.slice(0, PREVIEW_SWATCH_LIMIT);
+                      const normalizedKey = (preset.metaKey || preset.slug || preset.name || '')
+                        .toString()
+                        .trim()
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, '-');
+                      const curatedMeta = CURATED_PRESET_META[normalizedKey];
+                      const resolvedTitle = curatedMeta?.title || preset.name || 'Untitled Preset';
+                      const resolvedSubtitle = curatedMeta?.subtitle || preset.description?.trim() || `${preset.colorCount} colours · Custom Palette`;
+                      const socialLinks = (curatedMeta?.socialLinks || preset.socialLinks || []).map((link, index) => {
+                        const url = link.url?.startsWith('http') ? link.url : `https://${link.url?.replace(/^\/+/, '')}`;
+                        return {
+                          ...link,
+                          url,
+                          key: `${preset.id}-${index}`,
+                          icon: link.icon || link.label,
+                        };
+                      });
+                      const hasSocialLinks = socialLinks.length > 0;
+                      const isCurated = preset.source === 'curated';
+                      return (
+                        <div
+                          key={preset.id}
+                          style={{
+                            borderRadius: 14,
+                            padding: 16,
+                            background: 'rgba(18,20,28,0.9)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            boxShadow: '0 12px 24px rgba(0,0,0,0.35)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 12,
+                            width: PRESET_CARD_BODY_WIDTH + 32,
+                            alignItems: 'center',
+                            flex: '0 0 auto',
+                            minHeight: 420
+                          }}
+                        >
+                          <div style={{ textAlign: 'center', width: PRESET_CARD_BODY_WIDTH }}>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '0.03em' }}>{resolvedTitle}</div>
+                            <div style={{ fontSize: 12, color: '#8fa1d9', marginTop: 4, wordBreak: 'break-word', lineHeight: 1.4 }}>{resolvedSubtitle}</div>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(8, 16px)',
+                              gridAutoRows: '16px',
+                              gap: 3,
+                              padding: 4,
+                              background: 'rgba(18,20,28,0.0)',
+                              borderRadius: 8,
+                              border: '1px solid rgba(255,255,255,0.05)',
+                              gridAutoFlow: 'row',
+                              justifyContent: 'center',
+                              alignContent: 'start',
+                              width: PRESET_CARD_BODY_WIDTH,
+                              margin: '0 auto',
+                              minHeight: 309
+                            }}
+                          >
+                            {previewColors.map((color, index) => (
+                              <div
+                                key={`${preset.id}-preview-${index}`}
+                                style={{
+                                  width: 16,
+                                  height: 16,
+                                  borderRadius: 3,
+                                  background: color,
+                                  boxShadow: '0 1px 2px rgba(0,0,0,0.22)',
+                                  border: '1px solid rgba(255,255,255,0.08)'
+                                }}
+                                title={color}
+                              />
+                            ))}
+                          </div>
+
+                          {preset.colors.length > previewColors.length && (
+                            <div style={{ fontSize: 11, color: '#7182ba', fontWeight: 600 }}>
+                              +{preset.colors.length - previewColors.length} more swatches
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 'auto', width: PRESET_CARD_BODY_WIDTH, alignItems: 'center' }}>
+                            {hasSocialLinks ? (
+                              <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+                                {socialLinks.map((link) => (
+                                  <a
+                                    key={link.key}
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      width: 36,
+                                      height: 36,
+                                      borderRadius: '50%',
+                                      border: '1px solid rgba(255,255,255,0.12)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: '#f2f6ff',
+                                      fontSize: 11,
+                                      fontWeight: 800,
+                                      letterSpacing: '0.04em',
+                                      textDecoration: 'none',
+                                      background: 'rgba(255,255,255,0.04)',
+                                      transition: 'transform 0.15s, border-color 0.15s'
+                                    }}
+                                    title={link.label}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.transform = 'translateY(-1px)';
+                                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.transform = 'translateY(0)';
+                                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+                                    }}
+                                    aria-label={`${link.label} for ${resolvedTitle}`}
+                                  >
+                                    {(() => {
+                                      const normalizedIcon = (link.icon || '').toString().toLowerCase();
+                                      const renderIcon = SOCIAL_ICON_RENDERERS[normalizedIcon];
+                                      if (typeof renderIcon === 'function') {
+                                        return renderIcon();
+                                      }
+                                      const fallback = link.label?.slice(0, 2)?.toUpperCase() || 'Go';
+                                      return fallback;
+                                    })()}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <div style={{
+                                color: '#7182ba',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                border: '1px dashed rgba(255,255,255,0.08)',
+                                borderRadius: 10,
+                                padding: '8px 10px',
+                                textAlign: 'center',
+                                width: '100%'
+                              }}>
+                                Social links available soon.
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleLoadPreset(preset);
+                                  setShowPresetLibrary(false);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  background: 'linear-gradient(135deg, #516dff 0%, #6a8dff 100%)',
+                                  border: 'none',
+                                  borderRadius: 8,
+                                  padding: '8px 12px',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  fontSize: 13,
+                                  boxShadow: '0 8px 18px rgba(81, 109, 255, 0.28)'
+                                }}
+                              >
+                                Apply
+                              </button>
+                              {!isCurated && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePreset(preset.id)}
+                                  style={{
+                                    width: 42,
+                                    background: 'rgba(255,77,77,0.12)',
+                                    border: '1px solid rgba(255,77,77,0.35)',
+                                    borderRadius: 8,
+                                    color: '#ff8d8d',
+                                    fontWeight: 800,
+                                    cursor: 'pointer'
+                                  }}
+                                  title="Delete preset"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       {/* Import XML Modal */}
       {showImportModal && (
         <div
@@ -3145,9 +3689,13 @@ export default function App() {
               <input 
                 type="number" 
                 min={2} 
-                max={32} 
+                max={8} 
                 value={gradientSteps} 
-                onChange={e => setGradientSteps(Number(e.target.value))} 
+                onChange={e => {
+                  const next = Number(e.target.value);
+                  const clamped = Number.isFinite(next) ? Math.min(8, Math.max(2, next)) : 2;
+                  setGradientSteps(clamped);
+                }} 
                 style={{ 
                   width: 56, 
                   fontSize: 14, 
@@ -3592,7 +4140,7 @@ export default function App() {
                                 colors={row.colors}
                                 onSwatchClick={handleSwatchClick}
                                 handleRemoveColor={handleRemoveColor}
-                                setCopiedIndex={setCopiedIndex}
+                                onCopyColor={handleCopyColor}
                                 copiedIndex={copiedIndex}
                                 columns={columns}
                                 canDrag={row.colors.length >= columns}
@@ -3625,7 +4173,7 @@ export default function App() {
                         index={index}
                         color={c.color}
                         onRemove={handleRemoveColor}
-                        onCopy={setCopiedIndex}
+                        onCopy={handleCopyColor}
                         copied={copiedIndex === c.id}
                         onSwatchClick={handleSwatchClick}
                         selected={false}
@@ -3781,84 +4329,39 @@ export default function App() {
 
           {/* Presets List */}
           <div style={{ opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
-            {presets.length === 0 ? (
-              <div style={{ color: '#888', fontSize: 13, textAlign: 'center', padding: '20px 10px', lineHeight: 1.5 }}>
-                No presets saved yet. Save your current palette to create your first preset!
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {presets.map(preset => (
-                <div
-                  key={preset.id}
-                  style={{
-                    background: '#181818',
-                    borderRadius: 8,
-                    padding: 10,
-                    border: '1px solid #333',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#fff', marginBottom: 2 }}>{preset.name}</div>
-                      <div style={{ fontSize: 12, color: '#888' }}>{preset.colorCount} colors</div>
-                    </div>
-                    <button
-                      onClick={() => handleDeletePreset(preset.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#ff4d4d',
-                        cursor: 'pointer',
-                        fontSize: 18,
-                        padding: 2,
-                        lineHeight: 1,
-                      }}
-                      title="Delete preset"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  {/* Preview colors */}
-                  <div style={{ display: 'flex', gap: 2, marginBottom: 8, flexWrap: 'wrap' }}>
-                    {preset.colors.slice(0, 8).map((color, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 20,
-                          height: 20,
-                          background: color,
-                          borderRadius: 4,
-                          border: '1px solid #222',
-                        }}
-                      />
-                    ))}
-                    {preset.colors.length > 8 && (
-                      <div style={{ fontSize: 12, color: '#888', alignSelf: 'center', marginLeft: 4 }}>
-                        +{preset.colors.length - 8} more
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleLoadPreset(preset)}
-                    style={{
-                      width: '100%',
-                      background: '#444',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 6,
-                      padding: '6px 12px',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'background 0.15s',
-                    }}
-                  >
-                    Apply
-                  </button>
-                </div>
-              ))}
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowPresetLibrary(true)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: '#222',
+                border: '1px solid #3a3a3a',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'background 0.15s, transform 0.15s',
+                marginBottom: 12,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#2f2f2f';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#222';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+              title="Browse preset palettes"
+            >
+              <span style={{ fontSize: 16 }}>🎨</span>
+              <span>Presets</span>
+            </button>
 
             {/* Controls Grid */}
             <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '12px 0 6px' }}>Controls</div>
