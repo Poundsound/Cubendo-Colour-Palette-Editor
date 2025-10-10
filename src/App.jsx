@@ -7,6 +7,7 @@ import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
+import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon } from './icons';
 
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
@@ -1946,7 +1947,8 @@ export default function App() {
             onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
             onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
           >
-            📥 Import XML
+            <ImportIcon />
+            Import XML
           </button>
 
           {/* Create Backup */}
@@ -1956,7 +1958,8 @@ export default function App() {
           onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; }}
           onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            � Backup
+            <BackupIcon />
+            Backup
           </button>
 
           {/* Export XML */}
@@ -1966,7 +1969,8 @@ export default function App() {
           onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
           onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            � Export XML
+            <ExportIcon />
+            Export XML
           </button>
 
           {/* Divider */}
@@ -1983,7 +1987,8 @@ export default function App() {
             onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#333'; }}
             onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            ➕ Add Color
+            <AddIcon />
+            Add Color
           </button>
 
           {/* Randomize Palette */}
@@ -2027,10 +2032,7 @@ export default function App() {
             onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
             onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15.4 4.6l4 4-2.4 2.4 1.3 1.3a1 1 0 010 1.4l-1.6 1.6a1 1 0 01-1.4 0l-1.3-1.3-6.6 6.6H6v-4l6.6-6.6-1.3-1.3a1 1 0 010-1.4l1.6-1.6a1 1 0 011.4 0l1.3 1.3 2.4-2.4z" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M6 18h3.2" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <EyedropperIcon />
             Eyedropper
           </button>
         </div>
