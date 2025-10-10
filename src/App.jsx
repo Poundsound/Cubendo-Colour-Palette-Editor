@@ -1151,49 +1151,48 @@ export default function App() {
   }, [colors, pushHistory]);
 
   // Screen pick helper (adds a new swatch)
-  const handleScreenPickAddNew = useCallback(async () => {
+  const handleScreenPickAddNew = useCallback(() => {
     // Prevent multiple simultaneous eyedropper instances
     if (eyedropperActiveRef.current) {
       console.debug('Eyedropper already active, ignoring...');
       return;
     }
-    
-    // Check conditions without dependencies - read fresh state
+
+    // Guard conditions
     if (!xmlDoc) {
       console.debug('No XML document loaded');
       return;
     }
-    
     if (colors.length >= MAX_PALETTE_COLORS) {
       setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before adding another.`);
       return;
     }
-    
     if (!screenPickSupported) {
       alert('Screen Eyedropper not supported in this browser.');
       return;
     }
-    
+
     try {
       eyedropperActiveRef.current = true;
-      
-      // Small delay to ensure proper initialization
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
       const eye = new window.EyeDropper();
-      const result = await eye.open();
-      
-      if (result && result.sRGBHex) {
-        const newHex = result.sRGBHex.toUpperCase();
-        pushHistory([...colors, { id: uuidv4(), color: newHex }]);
-      }
+      eye.open()
+        .then((result) => {
+          if (result && result.sRGBHex) {
+            const newHex = result.sRGBHex.toUpperCase();
+            pushHistory([...colors, { id: uuidv4(), color: newHex }]);
+          }
+        })
+        .catch((err) => {
+          if (err && err.name !== 'AbortError') {
+            console.debug('Screen pick failed:', err);
+          }
+        })
+        .finally(() => {
+          eyedropperActiveRef.current = false;
+        });
     } catch (err) {
-      // User cancelled or error occurred
-      if (err.name !== 'AbortError') {
-        console.debug('Screen pick failed:', err);
-      }
-    } finally {
       eyedropperActiveRef.current = false;
+      console.debug('EyeDropper init failed:', err);
     }
   }, [colors, pushHistory, xmlDoc, screenPickSupported]);
 
@@ -1266,6 +1265,7 @@ export default function App() {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
       
       if (e.key.toLowerCase() === 'e') {
+        if (e.repeat) return; // avoid auto-repeat spamming
         e.preventDefault(); // Prevent any default behavior
         handleScreenPickRef.current();
       }
