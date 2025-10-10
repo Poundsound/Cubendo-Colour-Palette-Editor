@@ -7,7 +7,7 @@ import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
-import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon } from './icons';
+import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon, SwatchModeIcon, RowModeIcon } from './icons';
 
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
@@ -3705,7 +3705,17 @@ export default function App() {
               }
             }}
           >
-            {dragMode === 'SWATCH' ? '⋮⋮ Row Mode' : '🔄 Swatch Mode'}
+            {dragMode === 'SWATCH' ? (
+              <>
+                <RowModeIcon />
+                <span>Row Mode</span>
+              </>
+            ) : (
+              <>
+                <SwatchModeIcon />
+                <span>Swatch Mode</span>
+              </>
+            )}
           </button>
 
           {/* Round-Trip Test removed */}

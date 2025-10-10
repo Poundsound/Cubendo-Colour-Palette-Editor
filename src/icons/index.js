@@ -9,3 +9,5 @@ export { default as LoadIcon } from './LoadIcon.jsx';
 export { default as TrashIcon } from './TrashIcon.jsx';
 export { default as UndoIcon } from './UndoIcon.jsx';
 export { default as RedoIcon } from './RedoIcon.jsx';
+export { default as SwatchModeIcon } from './SwatchModeIcon.jsx';
+export { default as RowModeIcon } from './RowModeIcon.jsx';
