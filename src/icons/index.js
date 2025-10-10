@@ -11,3 +11,5 @@ export { default as UndoIcon } from './UndoIcon.jsx';
 export { default as RedoIcon } from './RedoIcon.jsx';
 export { default as SwatchModeIcon } from './SwatchModeIcon.jsx';
 export { default as RowModeIcon } from './RowModeIcon.jsx';
+export { default as ChevronLeftIcon } from './ChevronLeftIcon.jsx';
+export { default as ChevronRightIcon } from './ChevronRightIcon.jsx';

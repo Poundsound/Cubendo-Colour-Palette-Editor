@@ -7,7 +7,7 @@ import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
-import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon, SwatchModeIcon, RowModeIcon } from './icons';
+import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon, SwatchModeIcon, RowModeIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
 
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
@@ -849,10 +849,6 @@ export default function App() {
   const balanceSessionRef = useRef(null);
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
   const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
-  // Armed mode for Screen Eyedropper: press E to arm, next click triggers pick
-  const [screenPickArmed, setScreenPickArmed] = useState(false);
-  const screenPickArmedRef = useRef(false);
-  useEffect(() => { screenPickArmedRef.current = screenPickArmed; }, [screenPickArmed]);
 
   const displayedPercentRaw = isBalancing ? balanceProgress : (balanceScore ?? 0);
   const displayedPercent = Math.round(Math.min(100, Math.max(0, displayedPercentRaw)));
@@ -1183,7 +1179,9 @@ export default function App() {
         .then((result) => {
           if (result && result.sRGBHex) {
             const newHex = result.sRGBHex.toUpperCase();
-            pushHistory([...colors, { id: uuidv4(), color: newHex }]);
+            const newId = uuidv4();
+            scrollTargetIdRef.current = newId;
+            pushHistory([...colors, { id: newId, color: newHex }]);
           }
         })
         .catch((err) => {
@@ -1256,13 +1254,51 @@ export default function App() {
     }
   }, [colors, setError]);
 
+  // After adding new colors, scroll newly added swatch into view if outside viewport
+  const scrollTargetIdRef = useRef(null);
+  const scrollNewSwatchIntoView = useCallback(() => {
+    const id = scrollTargetIdRef.current;
+    if (!id) return;
+    const el = document.querySelector(`[data-swatch-id="${id}"]`);
+    const container = mainScrollRef.current ?? swatchGridRef.current ?? gridRef.current ?? null;
+    if (!el || !container) {
+      return;
+    }
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    const pad = 8;
+    const currentTop = container.scrollTop;
+    let nextTop = null;
+    if (eRect.top < cRect.top + pad) {
+      nextTop = currentTop - (cRect.top - eRect.top) - pad;
+    } else if (eRect.bottom > cRect.bottom - pad) {
+      nextTop = currentTop + (eRect.bottom - cRect.bottom) + pad;
+    }
+    if (nextTop != null) {
+      container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' });
+    }
+    scrollTargetIdRef.current = null;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!scrollTargetIdRef.current) return;
+    // Wait a frame to ensure DOM nodes are laid out
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => {
+        scrollNewSwatchIntoView();
+      });
+      return () => cancelAnimationFrame(raf2);
+    });
+    return () => cancelAnimationFrame(raf1);
+  }, [colors, scrollNewSwatchIntoView]);
+
   // Store the latest handler in a ref to avoid re-registering the event listener
   const handleScreenPickRef = useRef(handleScreenPickAddNew);
   useEffect(() => {
     handleScreenPickRef.current = handleScreenPickAddNew;
   }, [handleScreenPickAddNew]);
 
-  // Global shortcut: press 'E' to toggle Screen Eyedropper armed mode
+  // Global shortcut: press 'E' to pick any on-screen color and add as a new swatch
   useEffect(() => {
     const onKey = (e) => {
       // Ignore if typing in an input/textarea
@@ -1270,52 +1306,13 @@ export default function App() {
       
       if (e.key.toLowerCase() === 'e') {
         if (e.repeat) return; // avoid auto-repeat spamming
-        e.preventDefault();
-        // Toggle armed state only if supported and basic guards pass
-        if (!screenPickSupported || !xmlDoc || colors.length === 0 || paletteAtCapacity) {
-          return;
-        }
-        setScreenPickArmed(v => !v);
+        e.preventDefault(); // Prevent any default behavior
+        handleScreenPickRef.current();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [screenPickSupported, xmlDoc, colors.length, paletteAtCapacity]);
-
-  // When armed, the next pointer down triggers screen pick; Esc or E cancels
-  useEffect(() => {
-    if (!screenPickArmed) return;
-    const onPointerDown = (e) => {
-      // If user clicks the armed banner (cancel control), cancel instead of picking
-      const cancelHost = e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-ep-cancel]') : null;
-      if (cancelHost) {
-        e.preventDefault();
-        e.stopPropagation();
-        setScreenPickArmed(false);
-        return;
-      }
-      // Ensure still valid
-      if (!screenPickSupported || !xmlDoc || colors.length === 0 || paletteAtCapacity) {
-        setScreenPickArmed(false);
-        return;
-      }
-      // Consume event to avoid UI side-effects
-      e.preventDefault();
-      e.stopPropagation();
-      // Trigger synchronous EyeDropper.open()
-      handleScreenPickRef.current();
-      setScreenPickArmed(false);
-    };
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') setScreenPickArmed(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown, true);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [screenPickArmed, screenPickSupported, xmlDoc, colors.length, paletteAtCapacity, handleScreenPickRef]);
+  }, []); // Empty deps - only register once
 
   // Global shortcut: press 'R' to toggle between SWATCH and ROW drag modes
   const toggleDragMode = useCallback(() => {
@@ -1508,7 +1505,9 @@ export default function App() {
       setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before adding another.`);
       return;
     }
-    pushHistory([...colors, { id: uuidv4(), color: '#000000' }]);
+    const newId = uuidv4();
+    scrollTargetIdRef.current = newId;
+    pushHistory([...colors, { id: newId, color: '#000000' }]);
   };
 
   const handleRandomizePalette = () => {
@@ -1656,6 +1655,9 @@ export default function App() {
       return;
     }
     const colorsToAdd = gradientColors.slice(0, slotsRemaining).map(hex => ({ id: uuidv4(), color: hex }));
+    if (colorsToAdd.length > 0) {
+      scrollTargetIdRef.current = colorsToAdd[colorsToAdd.length - 1].id;
+    }
     pushHistory([...colors, ...colorsToAdd]);
     if (colorsToAdd.length < gradientColors.length) {
       setError(`Added ${colorsToAdd.length} gradient colors. ${gradientColors.length - colorsToAdd.length} could not be added due to the ${MAX_PALETTE_COLORS} color limit.`);
@@ -1771,6 +1773,37 @@ export default function App() {
     }
     pushHistory(inverted, { preserveScroll: true, skipFlip: true });
   };
+
+  // Navigate between colors while the color editor is open
+  const goToAdjacentSwatch = useCallback((direction) => {
+    if (!colorEditor) return;
+    const idx = colors.findIndex(c => c.id === colorEditor.id);
+    if (idx === -1) return; // Not a swatch (e.g., gradient-start) or no longer present
+    const nextIndex = direction === 'prev' ? idx - 1 : idx + 1;
+    if (nextIndex < 0 || nextIndex >= colors.length) return;
+    const nextSwatch = colors[nextIndex];
+    const hsv = hexToHSV(nextSwatch.color);
+    setColorEditor({ id: nextSwatch.id, color: nextSwatch.color, h: hsv.h, s: hsv.s, v: hsv.v });
+  }, [colorEditor, colors, hexToHSV]);
+
+  // While the color editor is open, allow ArrowLeft/ArrowRight to navigate
+  useEffect(() => {
+    if (!colorEditor) return;
+    const onKey = (e) => {
+      const tag = e.target.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
+      if (isInput) return; // don't hijack when typing or using sliders
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goToAdjacentSwatch('prev');
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goToAdjacentSwatch('next');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [colorEditor, goToAdjacentSwatch]);
 
   const handleSortByHue = () => {
     const sorted = [...colors].sort((a, b) => {
@@ -2088,37 +2121,30 @@ export default function App() {
             Randomize
           </button>
 
-          {/* Screen Eyedropper (Armed toggle) */}
+          {/* Screen Eyedropper */}
           <button
-            onClick={() => {
-              if (!xmlDoc || paletteAtCapacity || !screenPickSupported) return;
-              setScreenPickArmed(v => !v);
+            onPointerDown={(e) => {
+              // Only left-click/touch/pen
+              if (e.button != null && e.button !== 0) return;
+              e.preventDefault();
+              handleScreenPickAddNew();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleScreenPickAddNew();
+              }
             }}
             disabled={!xmlDoc || paletteAtCapacity || !screenPickSupported}
-            title={!xmlDoc
-              ? 'Import XML first'
-              : !screenPickSupported
-                ? 'Screen eyedropper not supported'
-                : paletteAtCapacity
-                  ? 'Palette is full'
-                  : screenPickArmed
-                    ? 'Eyedropper armed — press E or click banner to cancel'
-                    : 'Press E to arm, then click anywhere to pick'}
+            title={!xmlDoc ? 'Import XML first' : !screenPickSupported ? 'Screen eyedropper not supported' : paletteAtCapacity ? 'Palette is full' : 'Pick any on-screen color (shortcut: E)'}
             style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              background: (!xmlDoc || paletteAtCapacity || !screenPickSupported) ? '#2a2a2a' : (screenPickArmed ? '#1f4a2a' : '#2a2a2a'),
-              color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px',
-              cursor: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer',
-              fontWeight: 600, fontSize: 13,
-              opacity: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 0.5 : 1,
-              transition: 'background 0.15s, box-shadow 0.15s',
-              boxShadow: screenPickArmed ? '0 0 0 2px rgba(90, 240, 140, 0.25)' : 'none'
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 0.5 : 1, transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = screenPickArmed ? '#225731' : '#333'; }}
-            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = screenPickArmed ? '#1f4a2a' : '#2a2a2a'; }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
           >
             <EyedropperIcon />
-            {screenPickArmed ? 'Eyedropper (Armed)' : 'Eyedropper'}
+            Eyedropper
           </button>
         </div>
         <div className="header-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2305,7 +2331,72 @@ export default function App() {
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 16 }}>Color editor</div>
+            {(() => {
+              const idx = colors.findIndex(c => c.id === colorEditor.id);
+              const hasPrev = idx > 0;
+              const hasNext = idx !== -1 && idx < colors.length - 1;
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Color editor</div>
+                  <div style={{ display: 'inline-flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => goToAdjacentSwatch('prev')}
+                      disabled={!hasPrev}
+                      title="Previous colour"
+                      style={{
+                        width: 40,
+                        height: 36,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: hasPrev ? '#3a3a3a' : '#252525',
+                        color: hasPrev ? '#fff' : '#666',
+                        border: hasPrev ? '2px solid #555' : '2px solid #333',
+                        borderRadius: 8,
+                        cursor: hasPrev ? 'pointer' : 'not-allowed',
+                        opacity: 1,
+                        transition: 'all 0.15s',
+                        boxShadow: hasPrev ? '0 2px 8px rgba(0,0,0,0.3)' : 'none',
+                        fontSize: 20,
+                        fontWeight: 700
+                      }}
+                      onMouseEnter={(e) => { if (hasPrev) { e.currentTarget.style.background = '#4a4a4a'; e.currentTarget.style.borderColor = '#666'; } }}
+                      onMouseLeave={(e) => { if (hasPrev) { e.currentTarget.style.background = '#3a3a3a'; e.currentTarget.style.borderColor = '#555'; } }}
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToAdjacentSwatch('next')}
+                      disabled={!hasNext}
+                      title="Next colour"
+                      style={{
+                        width: 40,
+                        height: 36,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: hasNext ? '#3a3a3a' : '#252525',
+                        color: hasNext ? '#fff' : '#666',
+                        border: hasNext ? '2px solid #555' : '2px solid #333',
+                        borderRadius: 8,
+                        cursor: hasNext ? 'pointer' : 'not-allowed',
+                        opacity: 1,
+                        transition: 'all 0.15s',
+                        boxShadow: hasNext ? '0 2px 8px rgba(0,0,0,0.3)' : 'none',
+                        fontSize: 20,
+                        fontWeight: 700
+                      }}
+                      onMouseEnter={(e) => { if (hasNext) { e.currentTarget.style.background = '#4a4a4a'; e.currentTarget.style.borderColor = '#666'; } }}
+                      onMouseLeave={(e) => { if (hasNext) { e.currentTarget.style.background = '#3a3a3a'; e.currentTarget.style.borderColor = '#555'; } }}
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
             
             {/* Custom SV Picker + Hue Slider */}
             {(() => {
@@ -4625,30 +4716,6 @@ export default function App() {
             onClick={e => { e.stopPropagation(); setEyedropper(null); }}
           >
             Eyedropper active — click a swatch to copy its color. Click this banner to cancel.
-          </div>
-        </div>
-      )}
-      {/* Screen Eyedropper Armed overlay */}
-      {screenPickArmed && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 12000, pointerEvents: 'none'
-          }}
-        >
-          <div
-            data-ep-cancel
-            style={{
-              position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
-              background: 'rgba(30, 40, 30, 0.95)', color: '#d8ffe6',
-              border: '1px solid rgba(120, 240, 160, 0.5)', borderRadius: 10,
-              padding: '8px 14px', fontWeight: 700, fontSize: 13,
-              boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
-              pointerEvents: 'auto', cursor: 'pointer'
-            }}
-            title="Click to cancel"
-            onClick={(e) => { e.stopPropagation(); setScreenPickArmed(false); }}
-          >
-            Eyedropper armed — click anywhere to pick. Press E or click here to cancel.
           </div>
         </div>
       )}
