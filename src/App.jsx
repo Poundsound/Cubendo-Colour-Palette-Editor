@@ -6,6 +6,7 @@ import { DndProvider, useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
+import { FileIcon, FolderIcon, BulbIcon } from './components/Icons';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
 import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon, SwatchModeIcon, RowModeIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
 
@@ -3696,7 +3697,11 @@ export default function App() {
                 input.click();
               }}
             >
-              <div style={{ fontSize: 14, marginBottom: 8, color: '#aaa' }}>Defaults.xml</div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 8, color: '#aaa' }}>
+                {/* Small file glyph above label */}
+                <FileIcon size={18} color="#a8a8a8" />
+                <div style={{ fontSize: 14 }}>Defaults.xml</div>
+              </div>
               <div style={{ color: '#ddd', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
                 Drop your Defaults.xml file here
               </div>
@@ -3809,12 +3814,16 @@ export default function App() {
               fontSize: 12,
               lineHeight: 1.6
             }}>
-              <div style={{ color: '#fff', fontWeight: 600, marginBottom: 8 }}>📂 Default Location:</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 600, marginBottom: 8 }}>
+                <FolderIcon size={16} color="#d9d9d9" />
+                <span>Default Location:</span>
+              </div>
               <div style={{ fontFamily: 'monospace', color: '#4a9eff', marginBottom: 4 }}>
                 C:\Users\[YourName]\AppData\Roaming\Steinberg\Cubase [Version]\Presets\
               </div>
-              <div style={{ marginTop: 8, fontSize: 11, color: '#666' }}>
-                💡 Make sure to create a backup before making changes!
+              <div style={{ marginTop: 8, fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <BulbIcon size={14} color="#bdbdbd" />
+                <span>Make sure to create a backup before making changes!</span>
               </div>
             </div>
 
