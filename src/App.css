@@ -454,3 +454,35 @@ main .color-grid {
   }
 }
 
+/* Subtle size pulse for the background swatch under the dragged item */
+@keyframes swatchPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+/* Gentle pulse for a dragging row */
+@keyframes rowPulse {
+  0%, 100% {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    /* Subtler travel */
+    box-shadow: 0 9px 25px rgba(0, 0, 0, 0.53);
+  }
+}
+
+/* Pulse individual swatches while their row is being dragged */
+@keyframes rowSwatchPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    /* Subtler travel */
+    transform: scale(1.02);
+  }
+}
+

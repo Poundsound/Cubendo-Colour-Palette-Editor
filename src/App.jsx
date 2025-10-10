@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import './App.css';
 import { saveAs } from 'file-saver';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { DndProvider, useDrag, useDrop } from 'react-dnd';
-import { HTML5Backend } from 'react-dnd-html5-backend';
+import { DndProvider, useDrag, useDrop, useDragLayer } from 'react-dnd';
+import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 
@@ -130,26 +130,36 @@ function isAchromatic(hex) {
 // Swatch component for sortable grid
 // Simplified swatch component - no longer needs drag logic for individual swatches
 // React-DND Swatch for grid-based dragging
-function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected, moveColor, setDraggingItemId, onDragEnd }) {
+function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected, moveColor, setDraggingItemId, onDragEnd, canDrag = true }) {
   const ref = useRef(null);
   const lastMoveTime = useRef(0);
   
-  const [{ isDragging }, drag] = useDrag(() => ({
+  const [{ isDragging }, drag, dragPreview] = useDrag(() => ({
     type: 'SWATCH_GRID',
     item: () => {
       setDraggingItemId(id);
       return { id, index };
     },
+    canDrag: () => !!canDrag,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
     end: () => {
       onDragEnd();
     },
-  }), [id, index, setDraggingItemId, onDragEnd]);
+  }), [id, index, setDraggingItemId, onDragEnd, canDrag]);
 
-  const [, drop] = useDrop({
+  // Hide the native preview so we can render our own smaller custom preview
+  useEffect(() => {
+    dragPreview(getEmptyImage(), { captureDraggingState: true });
+  }, [dragPreview]);
+
+  const [{ isOver, canDrop }, drop] = useDrop({
     accept: 'SWATCH_GRID',
+    collect: (monitor) => ({
+      isOver: monitor.isOver(),
+      canDrop: monitor.canDrop(),
+    }),
     hover(item) {
       if (!ref.current) return;
       const dragIndex = item.index;
@@ -171,10 +181,13 @@ function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwa
   return (
     <div 
       ref={ref} 
+      data-swatch-id={id}
       style={{ 
         opacity: isDragging ? 0.4 : 1,
-        cursor: isDragging ? 'grabbing' : 'grab',
+        cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default',
         position: 'relative',
+        transform: isDragging ? 'scale(0.95)' : 'none',
+        transition: isDragging ? 'none' : 'transform 120ms ease',
       }}
     >
       <SwatchDisplay
@@ -186,7 +199,55 @@ function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwa
         onSwatchClick={onSwatchClick}
         selected={selected}
         isDragging={isDragging}
+        isHoverTarget={!isDragging && isOver && canDrop}
       />
+    </div>
+  );
+}
+
+// Custom drag layer to render a smaller preview following the cursor
+function CustomDragLayer({ colors }) {
+  const { item, isDragging, clientOffset } = useDragLayer((monitor) => ({
+    item: monitor.getItem(),
+    isDragging: monitor.isDragging(),
+    clientOffset: monitor.getClientOffset(),
+  }));
+
+  if (!isDragging || !clientOffset) return null;
+
+  const found = item?.id ? colors.find((c) => c.id === item.id) : undefined;
+  const color = found?.color ?? '#888888';
+
+  const size = 96; // px, larger but still a bit smaller than grid cells
+  const x = clientOffset.x - size / 2;
+  const y = clientOffset.y - size / 2;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        pointerEvents: 'none',
+        zIndex: 4000,
+    transform: `translate(${x}px, ${y}px) scale(1.05)`,
+    boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+    animation: 'dragGlow 600ms ease-in-out infinite',
+      }}
+    >
+      <div style={{ width: size, height: size }}>
+        <SwatchDisplay
+          id={item?.id}
+          color={color}
+          onRemove={() => {}}
+          onCopy={() => {}}
+          copied={false}
+          onSwatchClick={() => {}}
+          selected={false}
+          isDragging={true}
+          isHoverTarget={false}
+        />
+      </div>
     </div>
   );
 }
@@ -220,7 +281,7 @@ function DraggableSwatch({ id, color, index, onRemove, onCopy, copied, onSwatchC
   );
 }
 
-function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, selected, isDragging }) {
+function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, selected, isDragging, isHoverTarget, isRowDragging = false }) {
   const [isHovered, setIsHovered] = useState(false);
   
   return (
@@ -265,6 +326,11 @@ function SwatchDisplay({ id, color, onRemove, onCopy, copied, onSwatchClick, sel
           transition: isDragging ? 'none' : 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'visible',
           transform: isHovered && !isDragging ? 'scale(1.05)' : 'scale(1)',
+          animation: isHoverTarget
+            ? 'swatchPulse 600ms ease-in-out infinite'
+            : (isRowDragging ? 'rowSwatchPulse 600ms ease-in-out infinite' : 'none'),
+          transformOrigin: 'center',
+          willChange: isHoverTarget ? 'transform' : 'auto',
         }}
         title="Double-click to edit, click and hold to reorder"
       >
@@ -375,6 +441,8 @@ function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColo
           style.borderRadius = '8px';
           style.padding = '4px';
           style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.5)';
+          style.animation = 'rowPulse 700ms ease-in-out infinite';
+          style.willChange = 'background-color, box-shadow';
         }
         
         return (
@@ -432,6 +500,7 @@ function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColo
                 onSwatchClick={onSwatchClick}
                 selected={false}
                 isDragging={false}
+                isRowDragging={snapshot.isDragging}
               />
             ))}
           </div>
@@ -529,9 +598,91 @@ export default function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const gridRef = useRef(null);
+  const swatchGridRef = useRef(null); // SWATCH mode grid container
+  const [swatchDragReady, setSwatchDragReady] = useState(false);
   
   // Track currently dragging item to apply visual state
   const [draggingItemId, setDraggingItemId] = useState(null);
+
+  // FLIP animation: store previous rects of swatches between renders
+  const prevRectsRef = useRef(new Map());
+
+  // Animate swatch reordering transitions in SWATCH mode (post-drop)
+  useLayoutEffect(() => {
+    if (dragMode !== 'SWATCH') {
+      prevRectsRef.current = new Map();
+      return;
+    }
+    if (!swatchGridRef.current) return;
+    // Skip while dragging to avoid mid-drag jitter; animate on commit
+    if (draggingItemId) return;
+
+    const nodes = swatchGridRef.current.querySelectorAll('[data-swatch-id]');
+    const currentRects = new Map();
+    nodes.forEach((node) => {
+      const id = node.getAttribute('data-swatch-id');
+      if (!id) return;
+      currentRects.set(id, node.getBoundingClientRect());
+    });
+
+    // If we have previous rects, animate from previous to current
+    if (prevRectsRef.current.size) {
+      nodes.forEach((node) => {
+        const id = node.getAttribute('data-swatch-id');
+        const prev = id ? prevRectsRef.current.get(id) : null;
+        const last = id ? currentRects.get(id) : null;
+        if (!id || !prev || !last) return;
+        const dx = prev.left - last.left;
+        const dy = prev.top - last.top;
+        if (dx !== 0 || dy !== 0) {
+          node.style.transition = 'none';
+          node.style.transform = `translate(${dx}px, ${dy}px)`;
+          // Force reflow
+          void node.getBoundingClientRect();
+          node.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+          node.style.transform = 'translate(0, 0)';
+          const cleanup = () => {
+            node.style.transition = '';
+            node.removeEventListener('transitionend', cleanup);
+          };
+          node.addEventListener('transitionend', cleanup);
+        }
+      });
+    }
+
+    prevRectsRef.current = currentRects;
+  }, [colors, dragMode, draggingItemId]);
+
+  // When entering SWATCH mode, defer enabling dragging until providers/sources mount
+  useEffect(() => {
+    if (dragMode === 'SWATCH') {
+      setSwatchDragReady(false);
+      let raf1 = 0, raf2 = 0;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setSwatchDragReady(true));
+      });
+      return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    } else {
+      setSwatchDragReady(false);
+    }
+  }, [dragMode]);
+
+  // When colors are first populated (e.g., after XML import) in SWATCH mode, ensure drag is ready
+  const prevColorCountRef = useRef(0);
+  useEffect(() => {
+    const prev = prevColorCountRef.current;
+    const curr = colors.length;
+    prevColorCountRef.current = curr;
+    if (dragMode === 'SWATCH' && prev === 0 && curr > 0) {
+      setSwatchDragReady(false);
+      let raf1 = 0, raf2 = 0;
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setSwatchDragReady(true));
+      });
+      return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    }
+    return undefined;
+  }, [colors.length, dragMode]);
   
   // Use ref to track the current order without triggering re-renders
   const dragOrderRef = useRef(colors);
@@ -2612,10 +2763,6 @@ export default function App() {
         </aside>
   {/* Main content */}
   <main className="main">
-          {/* DnD context provider for sortable rows */}
-          <DragDropContext 
-            onDragEnd={onDragEnd}
-          >
               {/* Swatch Grid Container - Always visible */}
               <div ref={gridRef} style={{ 
                 width: '100%', 
@@ -2646,47 +2793,51 @@ export default function App() {
                   </div>
                 </div>
               ) : dragMode === 'ROW' ? (
-                // ROW MODE: Drag entire rows via handles
-                <div>
-                  <Droppable droppableId="palette-rows" type="ROW">
-                    {(rowProvided) => (
-                      <div
-                        ref={rowProvided.innerRef}
-                        {...rowProvided.droppableProps}
-                        style={{ width: '100%' }}
-                      >
-                        {(() => {
-                          const rows = [];
-                          for (let start = 0; start < colors.length; start += columns) {
-                            const end = Math.min(start + columns, colors.length);
-                            const rowIndex = Math.floor(start / columns);
-                            const rowColors = colors.slice(start, end);
-                            rows.push({ start, end, rowIndex, colors: rowColors });
-                          }
-                          
-                          return rows.map((row) => (
-                            <DraggableRow
-                              key={`row-${row.rowIndex}`}
-                              rowId={`row-${row.rowIndex}`}
-                              rowIndex={row.rowIndex}
-                              colors={row.colors}
-                              onSwatchClick={handleSwatchClick}
-                              handleRemoveColor={handleRemoveColor}
-                              setCopiedIndex={setCopiedIndex}
-                              copiedIndex={copiedIndex}
-                              columns={columns}
-                            />
-                          ));
-                        })()}
-                        {rowProvided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </div>
+                // ROW MODE: Drag entire rows via handles using @hello-pangea/dnd
+                <DragDropContext onDragEnd={onDragEnd}>
+                  <div>
+                    <Droppable droppableId="palette-rows" type="ROW">
+                      {(rowProvided) => (
+                        <div
+                          ref={rowProvided.innerRef}
+                          {...rowProvided.droppableProps}
+                          style={{ width: '100%' }}
+                        >
+                          {(() => {
+                            const rows = [];
+                            for (let start = 0; start < colors.length; start += columns) {
+                              const end = Math.min(start + columns, colors.length);
+                              const rowIndex = Math.floor(start / columns);
+                              const rowColors = colors.slice(start, end);
+                              rows.push({ start, end, rowIndex, colors: rowColors });
+                            }
+                            
+                            return rows.map((row) => (
+                              <DraggableRow
+                                key={`row-${row.rowIndex}`}
+                                rowId={`row-${row.rowIndex}`}
+                                rowIndex={row.rowIndex}
+                                colors={row.colors}
+                                onSwatchClick={handleSwatchClick}
+                                handleRemoveColor={handleRemoveColor}
+                                setCopiedIndex={setCopiedIndex}
+                                copiedIndex={copiedIndex}
+                                columns={columns}
+                              />
+                            ));
+                          })()}
+                          {rowProvided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </div>
+                </DragDropContext>
               ) : (
                 // SWATCH MODE: Use react-dnd for proper grid-based dragging
                 <DndProvider backend={HTML5Backend}>
+                  <CustomDragLayer colors={colors} />
                   <div
+                    ref={swatchGridRef}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: 'repeat(8, minmax(0, 1fr))',
@@ -2709,13 +2860,13 @@ export default function App() {
                         draggingItemId={draggingItemId}
                         setDraggingItemId={setDraggingItemId}
                         onDragEnd={handleDragEnd}
+                        canDrag={swatchDragReady}
                       />
                     ))}
                   </div>
                 </DndProvider>
               )}
               </div>
-          </DragDropContext>
         </main>
         {/* Right Sidebar: Presets Panel */}
         <aside className="sidebar right" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
