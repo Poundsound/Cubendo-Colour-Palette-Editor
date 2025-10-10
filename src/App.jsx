@@ -3654,7 +3654,7 @@ export default function App() {
             onClick={e => e.stopPropagation()}
           >
             <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 20, textAlign: 'center' }}>
-              📥 Import Defaults.xml
+              Import Defaults.xml
             </div>
 
             {/* Drop Zone */}
@@ -3696,7 +3696,7 @@ export default function App() {
                 input.click();
               }}
             >
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📁</div>
+              <div style={{ fontSize: 14, marginBottom: 8, color: '#aaa' }}>Defaults.xml</div>
               <div style={{ color: '#ddd', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
                 Drop your Defaults.xml file here
               </div>
@@ -3854,7 +3854,7 @@ export default function App() {
             <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', marginBottom: 4, letterSpacing: '-0.3px' }}>Gradient Generator</div>
             {!xmlDoc && (
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(35, 35, 35, 0.8)', borderRadius: 10, zIndex: 1 }}>
-                <div style={{ color: '#ff4d4d', fontSize: 14, fontWeight: 600, textAlign: 'center', padding: 20 }}>📥 Import XML first</div>
+                <div style={{ color: '#ff4d4d', fontSize: 14, fontWeight: 600, textAlign: 'center', padding: 20 }}>Import XML first</div>
               </div>
             )}
             
@@ -4485,7 +4485,7 @@ export default function App() {
           {!xmlDoc && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(35, 35, 35, 0.8)', borderRadius: 8, zIndex: 10 }}>
               <div style={{ color: '#ff4d4d', fontSize: 14, fontWeight: 600, textAlign: 'center', padding: 20 }}>
-                📥 Import XML first
+                Import XML first
               </div>
             </div>
           )}
