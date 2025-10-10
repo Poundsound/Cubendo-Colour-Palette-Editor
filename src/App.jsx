@@ -7,118 +7,69 @@ import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
 import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
 
-// Helper: get color name from hex
-function getColorName(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  
-  // Convert to HSL for better color naming
-  const max = Math.max(r, g, b) / 255;
-  const min = Math.min(r, g, b) / 255;
-  const l = (max + min) / 2;
-  const d = max - min;
-  
-  if (d === 0) {
-    if (l > 0.95) return 'White';
-    if (l < 0.05) return 'Black';
-    return 'Gray';
-  }
-  
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  
-  let h = 0;
-  if (max === r / 255) h = ((g - b) / 255 / d + (g < b ? 6 : 0)) / 6;
-  else if (max === g / 255) h = ((b - r) / 255 / d + 2) / 6;
-  else h = ((r - g) / 255 / d + 4) / 6;
-  h *= 360;
-  
-  // Lightness descriptors
-  let lightness = '';
-  if (l < 0.2) lightness = 'Very Dark ';
-  else if (l < 0.4) lightness = 'Dark ';
-  else if (l > 0.8) lightness = 'Light ';
-  else if (l > 0.9) lightness = 'Very Light ';
-  
-  // Saturation descriptors
-  let saturation = '';
-  if (s < 0.1) return lightness + 'Gray';
-  else if (s < 0.3) saturation = 'Grayish ';
-  else if (s > 0.9) saturation = 'Vivid ';
-  else if (s > 0.6) saturation = 'Bright ';
-  
-  // Hue names
-  let hue = '';
-  if (h < 15) hue = 'Red';
-  else if (h < 45) hue = 'Orange';
-  else if (h < 70) hue = 'Yellow';
-  else if (h < 150) hue = 'Green';
-  else if (h < 200) hue = 'Cyan';
-  else if (h < 250) hue = 'Blue';
-  else if (h < 310) hue = 'Purple';
-  else if (h < 340) hue = 'Magenta';
-  else hue = 'Red';
-  
-  return `${lightness}${saturation}${hue}`.trim();
-}
+const MAX_PALETTE_COLORS = 128;
 
-// Helper: convert hex to HSL
-function hexToHsl(hex) {
-  let r = 0, g = 0, b = 0;
-  if (hex.length === 7) {
-    r = parseInt(hex.slice(1, 3), 16) / 255;
-    g = parseInt(hex.slice(3, 5), 16) / 255;
-    b = parseInt(hex.slice(5, 7), 16) / 255;
-  }
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h, s, l = (max + min) / 2;
-  if (max === min) {
-    h = s = 0;
-  } else {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      case b: h = (r - g) / d + 4; break;
-      default: h = 0;
-    }
-    h /= 6;
-  }
-  return [h * 360, s, l];
-}
-
-// Helper: convert HSL to hex
 function hslToHex(h, s, l) {
-  h /= 360;
-  let r, g, b;
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p, q, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1 / 3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1 / 3);
+  const hue = ((h % 360) + 360) % 360;
+  const sat = Math.max(0, Math.min(1, s));
+  const light = Math.max(0, Math.min(1, l));
+
+  if (sat === 0) {
+    const value = Math.round(light * 255);
+    const channel = value.toString(16).padStart(2, '0');
+    return `#${channel}${channel}${channel}`.toUpperCase();
   }
-  return (
-    '#' +
-    [r, g, b]
-      .map(x => Math.round(x * 255).toString(16).padStart(2, '0'))
-      .join('')
-      .toUpperCase()
-  );
+
+  const q = light < 0.5 ? light * (1 + sat) : light + sat - light * sat;
+  const p = 2 * light - q;
+  const hueToChannel = (t) => {
+    let tt = t;
+    if (tt < 0) tt += 1;
+    if (tt > 1) tt -= 1;
+    if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+    if (tt < 1 / 2) return q;
+    if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+    return p;
+  };
+
+  const r = hueToChannel(hue / 360 + 1 / 3);
+  const g = hueToChannel(hue / 360);
+  const b = hueToChannel(hue / 360 - 1 / 3);
+
+  const toHex = (val) => Math.round(val * 255).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
 }
 
-// Helper: check if a hex color is achromatic (R=G=B)
+function hexToHsl(hex) {
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return [0, 0, 0];
+
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+
+  let h = 0;
+  if (delta !== 0) {
+    if (max === r) {
+      h = ((g - b) / delta) % 6;
+    } else if (max === g) {
+      h = (b - r) / delta + 2;
+    } else {
+      h = (r - g) / delta + 4;
+    }
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+
+  const l = (max + min) / 2;
+  const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
+
+  return [h, s, l];
+}
+
 function isAchromatic(hex) {
   if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return false;
   const r = parseInt(hex.slice(1, 3), 16);
@@ -127,13 +78,63 @@ function isAchromatic(hex) {
   return r === g && g === b;
 }
 
-// Swatch component for sortable grid
-// Simplified swatch component - no longer needs drag logic for individual swatches
-// React-DND Swatch for grid-based dragging
-function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected, moveColor, setDraggingItemId, onDragEnd, canDrag = true }) {
+function getColorName(hex) {
+  const [h, s, l] = hexToHsl(hex);
+  if (Number.isNaN(l)) return hex.toUpperCase();
+
+  if (s <= 0.08) {
+    if (l <= 0.08) return 'Black';
+    if (l <= 0.2) return 'Charcoal Grey';
+    if (l <= 0.35) return 'Dark Grey';
+    if (l <= 0.6) return 'Mid Grey';
+    if (l <= 0.8) return 'Light Grey';
+    return 'Near White';
+  }
+
+  const familyLabels = {
+    red: 'Red',
+    orange: 'Orange',
+    yellow: 'Yellow',
+    green: 'Green',
+    cyan: 'Teal',
+    blue: 'Blue',
+    magenta: 'Magenta',
+    grey: 'Grey',
+  };
+
+  const family = getHueFamily(h);
+  const base = familyLabels[family] || 'Color';
+
+  let prefix = '';
+  if (l <= 0.2) prefix = 'Deep ';
+  else if (l <= 0.35) prefix = 'Dark ';
+  else if (l >= 0.78) prefix = 'Bright ';
+  else if (l >= 0.65) prefix = 'Light ';
+
+  if (s >= 0.78 && l >= 0.35 && l <= 0.7) {
+    prefix = prefix || 'Vivid ';
+  }
+
+  return `${prefix}${base}`.trim();
+}
+
+function DraggableSwatchGrid({
+  id,
+  color,
+  index,
+  onRemove,
+  onCopy,
+  copied,
+  onSwatchClick,
+  selected,
+  moveColor,
+  setDraggingItemId,
+  onDragEnd,
+  canDrag = true,
+}) {
   const ref = useRef(null);
   const lastMoveTime = useRef(0);
-  
+
   const [{ isDragging }, drag, dragPreview] = useDrag(() => ({
     type: 'SWATCH_GRID',
     item: () => {
@@ -145,11 +146,11 @@ function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwa
       isDragging: monitor.isDragging(),
     }),
     end: () => {
+      setDraggingItemId(null);
       onDragEnd();
     },
   }), [id, index, setDraggingItemId, onDragEnd, canDrag]);
 
-  // Hide the native preview so we can render our own smaller custom preview
   useEffect(() => {
     dragPreview(getEmptyImage(), { captureDraggingState: true });
   }, [dragPreview]);
@@ -160,17 +161,16 @@ function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwa
       isOver: monitor.isOver(),
       canDrop: monitor.canDrop(),
     }),
-    hover(item) {
-      if (!ref.current) return;
+    hover: (item) => {
+      if (!ref.current || !moveColor) return;
       const dragIndex = item.index;
       const hoverIndex = index;
       if (dragIndex === hoverIndex) return;
-      
-      // Throttle to 60fps max for smoother animation
+
       const now = Date.now();
       if (now - lastMoveTime.current < 16) return;
       lastMoveTime.current = now;
-      
+
       moveColor(dragIndex, hoverIndex);
       item.index = hoverIndex;
     },
@@ -179,10 +179,10 @@ function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwa
   drag(drop(ref));
 
   return (
-    <div 
-      ref={ref} 
+    <div
+      ref={ref}
       data-swatch-id={id}
-      style={{ 
+      style={{
         opacity: isDragging ? 0.4 : 1,
         cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default',
         position: 'relative',
@@ -205,7 +205,6 @@ function DraggableSwatchGrid({ id, color, index, onRemove, onCopy, copied, onSwa
   );
 }
 
-// Custom drag layer to render a smaller preview following the cursor
 function CustomDragLayer({ colors }) {
   const { item, isDragging, clientOffset } = useDragLayer((monitor) => ({
     item: monitor.getItem(),
@@ -218,7 +217,7 @@ function CustomDragLayer({ colors }) {
   const found = item?.id ? colors.find((c) => c.id === item.id) : undefined;
   const color = found?.color ?? '#888888';
 
-  const size = 96; // px, larger but still a bit smaller than grid cells
+  const size = 96;
   const x = clientOffset.x - size / 2;
   const y = clientOffset.y - size / 2;
 
@@ -230,9 +229,9 @@ function CustomDragLayer({ colors }) {
         top: 0,
         pointerEvents: 'none',
         zIndex: 4000,
-    transform: `translate(${x}px, ${y}px) scale(1.05)`,
-    boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-    animation: 'dragGlow 600ms ease-in-out infinite',
+        transform: `translate(${x}px, ${y}px) scale(1.05)`,
+        boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+        animation: 'dragGlow 600ms ease-in-out infinite',
       }}
     >
       <div style={{ width: size, height: size }}>
@@ -244,14 +243,13 @@ function CustomDragLayer({ colors }) {
           copied={false}
           onSwatchClick={() => {}}
           selected={false}
-          isDragging={true}
+          isDragging
           isHoverTarget={false}
         />
       </div>
     </div>
   );
 }
-
 // Hello-Pangea DND Swatch (kept for compatibility if needed)
 function DraggableSwatch({ id, color, index, onRemove, onCopy, copied, onSwatchClick, selected }) {
   return (
@@ -667,6 +665,7 @@ export default function App() {
   const [dragMode, setDragMode] = useState('SWATCH'); // 'SWATCH' or 'ROW'
   const [showHelp, setShowHelp] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const gridRef = useRef(null);
   const mainScrollRef = useRef(null);
   const swatchGridRef = useRef(null); // SWATCH mode grid container
@@ -675,6 +674,7 @@ export default function App() {
   const [balanceProgress, setBalanceProgress] = useState(0);
   const [balanceScore, setBalanceScore] = useState(null);
   const [originalOrder, setOriginalOrder] = useState(null);
+  const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
 
   const displayedPercentRaw = isBalancing ? balanceProgress : (balanceScore ?? 0);
   const displayedPercent = Math.round(Math.min(100, Math.max(0, displayedPercentRaw)));
@@ -731,10 +731,10 @@ export default function App() {
     if (!swatchGridRef.current) return;
     // Skip while dragging to avoid mid-drag jitter; animate on commit
     if (draggingItemId) return;
-    if (skipFlipOnceRef.current) {
-      prevRectsRef.current = new Map();
+
+    const shouldSkipAnimation = skipFlipOnceRef.current;
+    if (shouldSkipAnimation) {
       skipFlipOnceRef.current = false;
-      return;
     }
 
     const nodes = swatchGridRef.current.querySelectorAll('[data-swatch-id]');
@@ -746,7 +746,7 @@ export default function App() {
     });
 
     // If we have previous rects, animate from previous to current
-    if (prevRectsRef.current.size) {
+    if (!shouldSkipAnimation && prevRectsRef.current.size) {
       nodes.forEach((node) => {
         const id = node.getAttribute('data-swatch-id');
         const prev = id ? prevRectsRef.current.get(id) : null;
@@ -772,6 +772,29 @@ export default function App() {
 
     prevRectsRef.current = currentRects;
   }, [colors, dragMode, draggingItemId, isBalancing]);
+
+  useLayoutEffect(() => {
+    const container = gridRef.current;
+    if (!container) return;
+
+    const baseMin = typeof window !== 'undefined' ? window.innerHeight * 0.6 : 0;
+
+    if (colors.length === 0) {
+      container.style.minHeight = '60vh';
+      return;
+    }
+
+    if (dragMode === 'SWATCH' && swatchGridRef.current) {
+      const gridHeight = swatchGridRef.current.scrollHeight;
+      const desired = Math.max(gridHeight + 32, baseMin);
+      container.style.minHeight = `${desired}px`;
+      return;
+    }
+
+    const contentHeight = container.scrollHeight;
+    const desired = Math.max(contentHeight, baseMin);
+    container.style.minHeight = `${desired}px`;
+  }, [colors.length, columns, dragMode]);
 
   // When entering SWATCH mode, defer enabling dragging until providers/sources mount
   useEffect(() => {
@@ -890,9 +913,9 @@ export default function App() {
 
   // Helper to push to history (only if changed)
   const pushHistory = useCallback((newColors, options = {}) => {
-    const { preserveScroll = false } = options;
+    const { preserveScroll = false, skipFlip = false } = options;
     const restoreScroll = preserveScroll ? createScrollRestorer() : null;
-    if (preserveScroll) skipFlipOnceRef.current = true;
+    if (preserveScroll || skipFlip) skipFlipOnceRef.current = true;
     setHistory(h => [...h, colors.map(c => ({ ...c }))]);
     setFuture([]);
     setColors(newColors);
@@ -913,6 +936,10 @@ export default function App() {
 
   // Screen pick helper (adds a new swatch)
   const handleScreenPickAddNew = useCallback(async () => {
+    if (colors.length >= MAX_PALETTE_COLORS) {
+      setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before adding another.`);
+      return;
+    }
     try {
       if ('EyeDropper' in window) {
         const eye = new window.EyeDropper();
@@ -991,11 +1018,16 @@ export default function App() {
         return;
       }
       setXmlDoc(doc);
-      const imported = hexes.map(hex => ({ id: uuidv4(), color: hex }));
+      const imported = hexes
+        .slice(0, MAX_PALETTE_COLORS)
+        .map(hex => ({ id: uuidv4(), color: hex }));
       setColors(imported);
       setOriginalOrder(imported.map((c) => c.id));
       setHistory([]);
       setFuture([]);
+      if (hexes.length > MAX_PALETTE_COLORS) {
+        setError(`Imported ${hexes.length} colors but only the first ${MAX_PALETTE_COLORS} were loaded.`);
+      }
     } catch (err) {
       console.error(err);
       setError(String(err.message || 'Failed to parse XML.'));
@@ -1030,13 +1062,29 @@ export default function App() {
   pushHistory(remaining);
   };
 
-  // Delete all colors
+  // Delete all colors - gate behind confirmation modal
   const handleDeleteAll = () => {
-    if (colors.length > 0) pushHistory([]);
+    if (colors.length === 0) return;
+    setShowDeleteAllConfirm(true);
+  };
+
+  const confirmDeleteAll = () => {
+    setShowDeleteAllConfirm(false);
+    if (colors.length > 0) {
+      pushHistory([]);
+    }
+  };
+
+  const cancelDeleteAll = () => {
+    setShowDeleteAllConfirm(false);
   };
 
   // Add a new color (default black)
   const handleAddColor = () => {
+    if (paletteAtCapacity) {
+      setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before adding another.`);
+      return;
+    }
     pushHistory([...colors, { id: uuidv4(), color: '#000000' }]);
   };
 
@@ -1109,7 +1157,16 @@ export default function App() {
       const b = Math.round(b1 + (b2 - b1) * t);
       gradientColors.push(`#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase());
     }
-    pushHistory([...colors, ...gradientColors.map(hex => ({ id: uuidv4(), color: hex }))]);
+    const slotsRemaining = Math.max(0, MAX_PALETTE_COLORS - colors.length);
+    if (slotsRemaining === 0) {
+      setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before adding another.`);
+      return;
+    }
+    const colorsToAdd = gradientColors.slice(0, slotsRemaining).map(hex => ({ id: uuidv4(), color: hex }));
+    pushHistory([...colors, ...colorsToAdd]);
+    if (colorsToAdd.length < gradientColors.length) {
+      setError(`Added ${colorsToAdd.length} gradient colors. ${gradientColors.length - colorsToAdd.length} could not be added due to the ${MAX_PALETTE_COLORS} color limit.`);
+    }
   };
 
   // Swatch click handler for eyedropper
@@ -1129,6 +1186,11 @@ export default function App() {
     // Note: Shift selection moved to drag handle, not the swatch body
     // Ctrl+click: duplicate swatch next to itself
     if (e.ctrlKey) {
+      if (colors.length >= MAX_PALETTE_COLORS) {
+        setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before duplicating.`);
+        e.stopPropagation();
+        return;
+      }
       const idx = colors.findIndex(c => c.id === id);
       if (idx !== -1) {
         const newColor = { ...colors[idx], id: uuidv4() };
@@ -1179,7 +1241,7 @@ export default function App() {
   // Tools: palette transforms and eyedropper controls
   const handleReversePalette = () => {
     if (colors.length < 2) return;
-    pushHistory([...colors].reverse());
+    pushHistory([...colors].reverse(), { skipFlip: true });
   };
 
   const handleShufflePalette = () => {
@@ -1191,6 +1253,32 @@ export default function App() {
     pushHistory(shuffled);
   };
 
+  const handleFlipPalette = () => {
+    if (colors.length < 2 || columns <= 0) return;
+    const mirrored = [];
+    for (let start = 0; start < colors.length; start += columns) {
+      const row = colors.slice(start, Math.min(start + columns, colors.length));
+      mirrored.push(...row.slice().reverse());
+    }
+    pushHistory(mirrored, { preserveScroll: true, skipFlip: true });
+  };
+
+  const handleInvertPalette = () => {
+    if (colors.length < 2 || columns <= 0) return;
+    const rows = [];
+    for (let start = 0; start < colors.length; start += columns) {
+      rows.push(colors.slice(start, Math.min(start + columns, colors.length)));
+    }
+    let inverted = [];
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      inverted = inverted.concat(rows[i]);
+    }
+    if (inverted.length !== colors.length) {
+      inverted = inverted.slice(0, colors.length);
+    }
+    pushHistory(inverted, { preserveScroll: true, skipFlip: true });
+  };
+
   const handleSortByHue = () => {
     const sorted = [...colors].sort((a, b) => {
       const [ha,, la] = hexToHsl(a.color);
@@ -1198,7 +1286,7 @@ export default function App() {
       if (ha === hb) return la - lb;
       return ha - hb;
     });
-    pushHistory(sorted);
+    pushHistory(sorted, { skipFlip: true });
   };
 
   const handleSortBySaturation = () => {
@@ -1208,7 +1296,7 @@ export default function App() {
       if (sa === sb) return la - lb;
       return sa - sb;
     });
-    pushHistory(sorted);
+    pushHistory(sorted, { skipFlip: true });
   };
 
   const handleSortByLightness = () => {
@@ -1217,7 +1305,7 @@ export default function App() {
       const [, , lb] = hexToHsl(b.color);
       return la - lb;
     });
-    pushHistory(sorted);
+    pushHistory(sorted, { skipFlip: true });
   };
 
   const handleRestoreOriginal = useCallback(() => {
@@ -1327,10 +1415,11 @@ export default function App() {
 
   // Save current palette as a preset
   const handleSavePreset = () => {
-    if (!presetName.trim() || colors.length === 0) return;
+    const trimmed = presetName.trim();
+    if (!trimmed || colors.length === 0) return;
     const newPreset = {
       id: uuidv4(),
-      name: presetName.trim(),
+      name: trimmed,
       description: '',
       colors: colors.map(c => c.color),
       colorCount: colors.length,
@@ -1344,9 +1433,13 @@ export default function App() {
 
   // Load a preset
   const handleLoadPreset = (preset) => {
-    const newColors = preset.colors.map(color => ({ id: uuidv4(), color }));
-    setOriginalOrder(newColors.map((c) => c.id));
-    pushHistory(newColors);
+    const mapped = preset.colors.map(color => ({ id: uuidv4(), color }));
+    const truncated = mapped.slice(0, MAX_PALETTE_COLORS);
+    setOriginalOrder(truncated.map((c) => c.id));
+    pushHistory(truncated);
+    if (mapped.length > MAX_PALETTE_COLORS) {
+      setError(`Preset contains ${mapped.length} colors. Only the first ${MAX_PALETTE_COLORS} were loaded.`);
+    }
   };
 
   // Delete a preset
@@ -1396,63 +1489,6 @@ export default function App() {
           onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
           >
             📤 Export XML
-          </button>
-
-          {/* Divider */}
-          <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
-
-          {/* Save JSON */}
-          <button 
-            onClick={() => {
-              if (presets.length === 0) {
-                alert('No presets to save');
-                return;
-              }
-              const json = JSON.stringify(presets, null, 2);
-              const blob = new Blob([json], { type: 'application/json' });
-              const date = new Date().toISOString().split('T')[0];
-              saveAs(blob, `cubase-presets_${date}.json`);
-            }}
-            disabled={!xmlDoc || presets.length === 0}
-            title={!xmlDoc ? 'Import XML first' : presets.length === 0 ? 'No presets to save' : 'Save all presets to JSON'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: (!xmlDoc || presets.length===0)?0.5:1, cursor: (!xmlDoc || presets.length===0)?'not-allowed':'pointer', transition: 'background 0.15s'
-            }}
-            onMouseEnter={(e) => { if (xmlDoc && presets.length > 0) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (xmlDoc && presets.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
-          >
-            💾 Save JSON
-          </button>
-
-          {/* Load JSON */}
-          <button
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '.json';
-              input.onchange = async (e) => {
-                try {
-                  const file = e.target.files[0];
-                  const text = await file.text();
-                  const loaded = JSON.parse(text);
-                  setPresets(loaded);
-                  localStorage.setItem('cubase-color-presets', JSON.stringify(loaded));
-                  alert(`Loaded ${loaded.length} presets successfully!`);
-                } catch (err) {
-                  alert('Failed to load presets: ' + err.message);
-                }
-              };
-              input.click();
-            }}
-            disabled={!xmlDoc}
-            title={!xmlDoc ? 'Import XML first' : 'Load presets from JSON'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', transition: 'background 0.15s'
-            }}
-            onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
-          >
-            📂 Load JSON
           </button>
 
           {/* Divider */}
@@ -1531,6 +1567,95 @@ export default function App() {
 
         </div>
       </header>
+
+      {showDeleteAllConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 12000,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={cancelDeleteAll}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-all-heading"
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              padding: 24,
+              minWidth: 260,
+              maxWidth: 340,
+              border: '1px solid #333',
+              boxShadow: '0 10px 36px rgba(0,0,0,0.55)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 18,
+              textAlign: 'center'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div id="delete-all-heading" style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
+              Delete all colors?
+            </div>
+            <div style={{ fontSize: 14, color: '#bbb', lineHeight: 1.6 }}>
+              <p style={{ margin: '0 0 6px 0' }}>This removes every swatch from the palette.</p>
+              <p style={{ margin: 0 }}>You can undo afterwards.</p>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
+              <button
+                type="button"
+                style={{
+                  background: '#2a2a2a',
+                  color: '#eee',
+                  border: '1px solid #444',
+                  borderRadius: 7,
+                  padding: '8px 18px',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s'
+                }}
+                onClick={cancelDeleteAll}
+                onMouseEnter={e => { e.currentTarget.style.background = '#333'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#2a2a2a'; }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{
+                  background: '#ff4d4d',
+                  color: '#fff',
+                  border: '1px solid #ff6a6a',
+                  borderRadius: 7,
+                  padding: '8px 18px',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  boxShadow: '0 3px 12px rgba(255,77,77,0.35)',
+                  transition: 'background 0.15s'
+                }}
+                onClick={confirmDeleteAll}
+                onMouseEnter={e => { e.currentTarget.style.background = '#ff5d5d'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#ff4d4d'; }}
+              >
+                Delete Everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom Color Editor Modal with react-colorful */}
       {colorEditor && (
@@ -2576,29 +2701,29 @@ export default function App() {
           {/* Add Color Button */}
           <button 
             onClick={handleAddColor}
-            disabled={!xmlDoc}
-            title={!xmlDoc ? 'Import XML first' : 'Add a new color'}
+            disabled={!xmlDoc || paletteAtCapacity}
+            title={!xmlDoc ? 'Import XML first' : paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add a new color'}
             style={{
               display: 'flex', 
               alignItems: 'center', 
               justifyContent: 'center', 
               gap: 8, 
               width: '100%', 
-              background: !xmlDoc ? '#232323' : '#444', 
+              background: (!xmlDoc || paletteAtCapacity) ? '#232323' : '#444', 
               color: '#fff', 
-              border: !xmlDoc ? '1px solid #333' : 'none', 
+              border: (!xmlDoc || paletteAtCapacity) ? '1px solid #333' : 'none', 
               borderRadius: 7, 
               padding: '10px 14px', 
               fontWeight: 700, 
               fontSize: 15, 
-              cursor: !xmlDoc ? 'not-allowed' : 'pointer',
-              opacity: !xmlDoc ? 0.5 : 1,
+              cursor: (!xmlDoc || paletteAtCapacity) ? 'not-allowed' : 'pointer',
+              opacity: (!xmlDoc || paletteAtCapacity) ? 0.5 : 1,
               marginBottom: 8,
               boxShadow: '0 1px 4px #0002',
               transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#555'; }}
-            onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#444'; }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#555'; }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#444'; }}
           >
             ➕ Add Color
           </button>
@@ -2983,7 +3108,35 @@ export default function App() {
                 />
               </div>
             </div>
-            <button className="btn" style={{ width: '100%', marginTop: 6, background: '#444', color: '#fff', fontWeight: 700, borderRadius: 7, fontSize: 15, boxShadow: '0 1px 4px #0002', border: 'none', padding: '7px 0', transition: 'background 0.15s', outline: 'none' }} onClick={handleApplyGradient} aria-label="Add Gradient" onFocus={e => e.currentTarget.style.boxShadow = '0 0 0 2px #ff4d4d'} onBlur={e => e.currentTarget.style.boxShadow = '0 1px 4px #0002'}>Add Gradient</button>
+            <button
+              className="btn"
+              style={{
+                width: '100%',
+                marginTop: 6,
+                background: paletteAtCapacity ? '#232323' : '#444',
+                color: '#fff',
+                fontWeight: 700,
+                borderRadius: 7,
+                fontSize: 15,
+                boxShadow: '0 1px 4px #0002',
+                border: paletteAtCapacity ? '1px solid #333' : 'none',
+                padding: '7px 0',
+                transition: 'background 0.15s',
+                outline: 'none',
+                cursor: paletteAtCapacity ? 'not-allowed' : 'pointer',
+                opacity: paletteAtCapacity ? 0.5 : 1,
+              }}
+              disabled={paletteAtCapacity}
+              title={paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add a generated gradient'}
+              onClick={handleApplyGradient}
+              aria-label="Add Gradient"
+              onFocus={e => { if (!paletteAtCapacity) e.currentTarget.style.boxShadow = '0 0 0 2px #ff4d4d'; }}
+              onBlur={e => e.currentTarget.style.boxShadow = '0 1px 4px #0002'}
+              onMouseEnter={e => { if (!paletteAtCapacity) e.currentTarget.style.background = '#555'; }}
+              onMouseLeave={e => { if (!paletteAtCapacity) e.currentTarget.style.background = '#444'; }}
+            >
+              Add Gradient
+            </button>
           </div>
           {/* Balance Palette control */}
           <div style={{ width: '100%', margin: '4px 0 8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
@@ -3199,30 +3352,108 @@ export default function App() {
                 padding: '8px 12px',
                 color: '#fff',
                 fontSize: 14,
-                marginBottom: 8,
+                marginBottom: 10,
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
             />
-            <button
-              onClick={handleSavePreset}
-              disabled={!xmlDoc || !presetName.trim() || colors.length === 0}
-              style={{
-                width: '100%',
-                background: '#444',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 7,
-                padding: '8px 12px',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: (!xmlDoc || colors.length === 0 || !presetName.trim()) ? 'not-allowed' : 'pointer',
-                opacity: (!xmlDoc || colors.length === 0 || !presetName.trim()) ? 0.5 : 1,
-                transition: 'background 0.15s',
-              }}
-            >
-              Save
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                onClick={() => {
+                  if (colors.length === 0) {
+                    alert('No colors to save yet.');
+                    return;
+                  }
+                  const paletteHexes = colors.map(c => c.color);
+                  const json = JSON.stringify(paletteHexes, null, 2);
+                  const blob = new Blob([json], { type: 'application/json' });
+                  const trimmed = presetName.trim();
+                  const suffix = trimmed ? trimmed.replace(/\s+/g, '_') : 'Untitled';
+                  saveAs(blob, `CPE_Preset_${suffix}.json`);
+                }}
+                disabled={colors.length === 0}
+                title={colors.length === 0 ? 'Add or import colors before saving' : 'Save the current palette (hex values only)'}
+                style={{
+                  width: '100%',
+                  background: colors.length === 0 ? '#232323' : '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #333',
+                  borderRadius: 7,
+                  padding: '8px 12px',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: colors.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: colors.length === 0 ? 0.5 : 1,
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
+                onMouseLeave={e => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+              >
+                💾 Save JSON
+              </button>
+              <button
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.json';
+                  input.onchange = async (event) => {
+                    try {
+                      const file = event.target.files && event.target.files[0];
+                      if (!file) return;
+                      const text = await file.text();
+                      const parsed = JSON.parse(text);
+                      const candidate = Array.isArray(parsed)
+                        ? parsed
+                        : (parsed && Array.isArray(parsed.colors) ? parsed.colors : null);
+
+                      if (!candidate || candidate.length === 0) {
+                        alert('No colors found in this JSON file.');
+                        return;
+                      }
+
+                      const sanitized = candidate.map((hex) =>
+                        typeof hex === 'string' ? hex.trim().toUpperCase() : ''
+                      );
+
+                      const invalid = sanitized.filter(hex => !/^#[0-9A-F]{6}$/.test(hex));
+                      if (invalid.length > 0) {
+                        alert('Some entries are not valid 6-digit hex colors. Please fix the file and try again.');
+                        return;
+                      }
+
+                      const truncated = sanitized.slice(0, MAX_PALETTE_COLORS);
+                      const newPalette = truncated.map(color => ({ id: uuidv4(), color }));
+                      setOriginalOrder(newPalette.map(c => c.id));
+                      pushHistory(newPalette);
+
+                      if (sanitized.length > MAX_PALETTE_COLORS) {
+                        setError(`Palette file contains ${sanitized.length} colors. Only the first ${MAX_PALETTE_COLORS} were loaded.`);
+                      }
+                    } catch (err) {
+                      alert('Failed to load palette: ' + err.message);
+                    }
+                  };
+                  input.click();
+                }}
+                title="Load a palette JSON (hex array)"
+                style={{
+                  width: '100%',
+                  background: '#2a2a2a',
+                  color: '#fff',
+                  border: '1px solid #333',
+                  borderRadius: 7,
+                  padding: '8px 12px',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#333'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#2a2a2a'; }}
+              >
+                📂 Load JSON
+              </button>
+            </div>
           </div>
 
           <hr style={{ border: 'none', borderTop: '1px solid #333', margin: '8px 0' }} />
@@ -3312,20 +3543,14 @@ export default function App() {
             <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px', margin: '12px 0 6px' }}>Controls</div>
             <div className="btn-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
               {/* Balance Palette moved to left sidebar */}
+              <button className="btn" onClick={handleRestoreOriginal} disabled={!canRestoreOriginal} title={!xmlDoc ? 'Import XML first' : canRestoreOriginal ? 'Restore original import order' : 'Original order unavailable (palette changed)'} aria-label="Restore original order">Original</button>
+              <button className="btn" onClick={handleFlipPalette} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Mirror left/right within each row'} aria-label="Flip rows">Flip</button>
+              <button className="btn" onClick={handleInvertPalette} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Invert row order while keeping left-to-right colour order'} aria-label="Invert rows">Invert</button>
               <button className="btn" onClick={handleReversePalette} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Reverse order'} aria-label="Reverse">Reverse</button>
               <button className="btn" onClick={handleShufflePalette} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Shuffle colors'} aria-label="Shuffle">Shuffle</button>
               <button className="btn" onClick={handleSortByHue} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Hue'} aria-label="Sort by Hue">Sort: Hue</button>
               <button className="btn" onClick={handleSortBySaturation} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Saturation'} aria-label="Sort by Saturation">Sort: Sat</button>
               <button className="btn" onClick={handleSortByLightness} disabled={!xmlDoc || colors.length < 2} title={!xmlDoc ? 'Import XML first' : 'Sort by Lightness'} aria-label="Sort by Lightness">Sort: Light</button>
-              <button
-                className="btn"
-                onClick={handleRestoreOriginal}
-                disabled={!canRestoreOriginal}
-                title={!xmlDoc ? 'Import XML first' : canRestoreOriginal ? 'Restore original import order' : 'Original order unavailable (palette changed)'}
-                aria-label="Restore original order"
-              >
-                Original
-              </button>
               {/* Round-Trip Test removed */}
             </div>
           </div>
@@ -3485,7 +3710,7 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ color: '#bbb', fontSize: 13 }}>Colors: <b style={{ color: '#fff' }}>{colors.length}</b></span>
+          <span style={{ color: '#bbb', fontSize: 13 }}>Colors: <b style={{ color: '#fff' }}>{colors.length}</b> / {MAX_PALETTE_COLORS}</span>
           <span style={{ color: '#444' }}>|</span>
           <span style={{ color: '#666', fontSize: 12 }}>v1.0</span>
           <span style={{ color: '#444' }}>|</span>
