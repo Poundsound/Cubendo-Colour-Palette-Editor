@@ -838,6 +838,7 @@ export default function App() {
   const mainScrollRef = useRef(null);
   const swatchGridRef = useRef(null); // SWATCH mode grid container
   const [swatchDragReady, setSwatchDragReady] = useState(false);
+  const eyedropperActiveRef = useRef(false); // Prevent multiple simultaneous eyedropper instances
   const [isBalancing, setIsBalancing] = useState(false);
   const [balanceProgress, setBalanceProgress] = useState(0);
   const [balanceScore, setBalanceScore] = useState(null);
@@ -1150,23 +1151,50 @@ export default function App() {
 
   // Screen pick helper (adds a new swatch)
   const handleScreenPickAddNew = useCallback(async () => {
+    // Prevent multiple simultaneous eyedropper instances
+    if (eyedropperActiveRef.current) {
+      console.debug('Eyedropper already active, ignoring...');
+      return;
+    }
+    
+    // Check conditions without dependencies - read fresh state
+    if (!xmlDoc) {
+      console.debug('No XML document loaded');
+      return;
+    }
+    
     if (colors.length >= MAX_PALETTE_COLORS) {
       setError(`Palette limit reached (${MAX_PALETTE_COLORS}). Remove a color before adding another.`);
       return;
     }
+    
+    if (!screenPickSupported) {
+      alert('Screen Eyedropper not supported in this browser.');
+      return;
+    }
+    
     try {
-      if ('EyeDropper' in window) {
-        const eye = new window.EyeDropper();
-        const result = await eye.open();
+      eyedropperActiveRef.current = true;
+      
+      // Small delay to ensure proper initialization
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      const eye = new window.EyeDropper();
+      const result = await eye.open();
+      
+      if (result && result.sRGBHex) {
         const newHex = result.sRGBHex.toUpperCase();
         pushHistory([...colors, { id: uuidv4(), color: newHex }]);
-      } else {
-        alert('Screen Eyedropper not supported in this browser.');
       }
     } catch (err) {
-      console.debug('Screen pick cancelled or failed:', err);
+      // User cancelled or error occurred
+      if (err.name !== 'AbortError') {
+        console.debug('Screen pick failed:', err);
+      }
+    } finally {
+      eyedropperActiveRef.current = false;
     }
-  }, [colors, pushHistory]);
+  }, [colors, pushHistory, xmlDoc, screenPickSupported]);
 
   const handleCopyColor = useCallback((id) => {
     const target = colors.find((swatch) => swatch.id === id);
@@ -1224,16 +1252,26 @@ export default function App() {
     }
   }, [colors, setError]);
 
+  // Store the latest handler in a ref to avoid re-registering the event listener
+  const handleScreenPickRef = useRef(handleScreenPickAddNew);
+  useEffect(() => {
+    handleScreenPickRef.current = handleScreenPickAddNew;
+  }, [handleScreenPickAddNew]);
+
   // Global shortcut: press 'E' to pick any on-screen color and add as a new swatch
   useEffect(() => {
     const onKey = (e) => {
+      // Ignore if typing in an input/textarea
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      
       if (e.key.toLowerCase() === 'e') {
-        handleScreenPickAddNew();
+        e.preventDefault(); // Prevent any default behavior
+        handleScreenPickRef.current();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleScreenPickAddNew]);
+  }, []); // Empty deps - only register once
 
   // Track desired columns based on container width (responsive breakpoints)
   useEffect(() => {
@@ -1911,19 +1949,6 @@ export default function App() {
             📥 Import XML
           </button>
 
-          {/* Export XML */}
-          <button onClick={handleDownload} disabled={colors.length===0} style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
-          }}
-          onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
-          onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
-          >
-            📤 Export XML
-          </button>
-
-          {/* Divider */}
-          <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
-
           {/* Create Backup */}
           <button onClick={handleCreateBackup} disabled={!xmlDoc} style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', transition: 'background 0.15s'
@@ -1931,7 +1956,34 @@ export default function App() {
           onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; }}
           onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
           >
-            🔒 Backup
+            � Backup
+          </button>
+
+          {/* Export XML */}
+          <button onClick={handleDownload} disabled={colors.length===0} style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
+          }}
+          onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
+          onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            � Export XML
+          </button>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
+
+          {/* Add Color */}
+          <button
+            onClick={handleAddColor}
+            disabled={!xmlDoc || paletteAtCapacity}
+            title={!xmlDoc ? 'Import XML first' : paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add a new color'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: (!xmlDoc || paletteAtCapacity) ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: (!xmlDoc || paletteAtCapacity) ? 0.5 : 1, transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#2a2a2a'; }}
+          >
+            ➕ Add Color
           </button>
 
           {/* Randomize Palette */}
@@ -1967,13 +2019,13 @@ export default function App() {
           {/* Screen Eyedropper */}
           <button
             onClick={handleScreenPickAddNew}
-            disabled={paletteAtCapacity || !screenPickSupported}
-            title={screenPickSupported ? (paletteAtCapacity ? 'Palette is full' : 'Pick any on-screen color (shortcut: E)') : 'Screen eyedropper not supported'}
+            disabled={!xmlDoc || paletteAtCapacity || !screenPickSupported}
+            title={!xmlDoc ? 'Import XML first' : !screenPickSupported ? 'Screen eyedropper not supported' : paletteAtCapacity ? 'Palette is full' : 'Pick any on-screen color (shortcut: E)'}
             style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: paletteAtCapacity || !screenPickSupported ? 0.5 : 1, transition: 'background 0.15s'
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 0.5 : 1, transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (!paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (!paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M15.4 4.6l4 4-2.4 2.4 1.3 1.3a1 1 0 010 1.4l-1.6 1.6a1 1 0 01-1.4 0l-1.3-1.3-6.6 6.6H6v-4l6.6-6.6-1.3-1.3a1 1 0 010-1.4l1.6-1.6a1 1 0 011.4 0l1.3 1.3 2.4-2.4z" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -3615,36 +3667,6 @@ export default function App() {
       <div className="layout">
         {/* Left Sidebar */}
         <aside className="sidebar left" style={{ padding: 10, gap: 0 }}>
-          {/* Add Color Button */}
-          <button 
-            onClick={handleAddColor}
-            disabled={!xmlDoc || paletteAtCapacity}
-            title={!xmlDoc ? 'Import XML first' : paletteAtCapacity ? `Palette limit reached (${MAX_PALETTE_COLORS})` : 'Add a new color'}
-            style={{
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              gap: 8, 
-              width: '100%', 
-              background: (!xmlDoc || paletteAtCapacity) ? '#232323' : '#444', 
-              color: '#fff', 
-              border: (!xmlDoc || paletteAtCapacity) ? '1px solid #333' : 'none', 
-              borderRadius: 7, 
-              padding: '10px 14px', 
-              fontWeight: 700, 
-              fontSize: 15, 
-              cursor: (!xmlDoc || paletteAtCapacity) ? 'not-allowed' : 'pointer',
-              opacity: (!xmlDoc || paletteAtCapacity) ? 0.5 : 1,
-              marginBottom: 8,
-              boxShadow: '0 1px 4px #0002',
-              transition: 'background 0.15s'
-            }}
-            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#555'; }}
-            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#444'; }}
-          >
-            ➕ Add Color
-          </button>
-
           {/* Drag Mode Toggle */}
           <button 
             onClick={() => setDragMode(dragMode === 'SWATCH' ? 'ROW' : 'SWATCH')}
