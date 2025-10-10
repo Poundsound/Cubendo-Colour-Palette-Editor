@@ -3710,93 +3710,116 @@ export default function App() {
               </div>
             </div>
 
-            {pendingXmlFile && (
-              <div
-                style={{
-                  marginBottom: 20,
-                  background: '#2c1a1a',
-                  borderRadius: 10,
-                  border: '1px solid #a34444',
-                  padding: 22,
-                  color: '#ffeaea',
-                  boxShadow: '0 6px 24px rgba(0,0,0,0.45)'
-                }}
-              >
-                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#ffc7c7' }}>Backup strongly recommended</div>
+            {/* Backup panel: now always visible */}
+            <div
+              style={{
+                marginBottom: 20,
+                background: '#2c1a1a',
+                borderRadius: 10,
+                border: '1px solid #a34444',
+                padding: 22,
+                color: '#ffeaea',
+                boxShadow: '0 6px 24px rgba(0,0,0,0.45)'
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#ffc7c7' }}>Backup strongly recommended</div>
+              {pendingXmlFile ? (
                 <div style={{ fontFamily: 'Fira Mono, monospace', fontSize: 13, marginBottom: 14 }}>
                   {pendingXmlFile.name}
                   <span style={{ color: '#ff8d8d', marginLeft: 10 }}>
                     {(pendingXmlFile.size / 1024).toFixed(1)} KB
                   </span>
                 </div>
-                <div style={{ fontSize: 13, color: '#ffb3b3', marginBottom: 12, lineHeight: 1.6 }}>
-                  Create a backup copy before importing. This lets you roll back to your current Defaults.xml instantly.
+              ) : (
+                <div style={{ fontSize: 13, marginBottom: 14, color: '#ffbdbd' }}>
+                  Defaults.xml not selected yet — use the drop zone above to choose your file.
                 </div>
-                <div style={{
-                  fontSize: 12,
-                  color: '#fff6f6',
-                  background: 'rgba(255, 120, 120, 0.18)',
-                  border: '1px solid rgba(255, 150, 150, 0.45)',
-                  borderRadius: 6,
-                  padding: '10px 12px',
-                  marginBottom: 16,
-                  lineHeight: 1.6,
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}>
-                  When restoring, rename the backup back to <span style={{ fontFamily: 'Fira Mono, monospace' }}>Defaults.xml</span> — remove "(backup)" before replacing the original.
-                </div>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={handleBackupPendingXml}
-                    style={{
-                      flex: 1,
-                      minWidth: 140,
-                      background: '#c94141',
-                      border: '1px solid rgba(255,120,120,0.65)',
-                      color: '#fff',
-                      fontWeight: 700,
-                      borderRadius: 8,
-                      padding: '10px 16px',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s, transform 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#b23333';
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#c94141';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
-                  >
-                    Create Backup
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleImportPendingXml}
-                    style={{
-                      flex: 1,
-                      minWidth: 140,
-                      background: '#2a2a2a',
-                      border: '1px solid #3a3a3a',
-                      color: '#fff',
-                      fontWeight: 700,
-                      borderRadius: 8,
-                      padding: '10px 16px',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s'
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = '#353535'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; }}
-                  >
-                    Import Palette
-                  </button>
-                </div>
+              )}
+              <div style={{ fontSize: 13, color: '#ffb3b3', marginBottom: 12, lineHeight: 1.6 }}>
+                Create a backup copy before importing. This lets you roll back to your current Defaults.xml instantly.
               </div>
-            )}
+              <div style={{
+                fontSize: 12,
+                color: '#fff6f6',
+                background: 'rgba(255, 120, 120, 0.18)',
+                border: '1px solid rgba(255, 150, 150, 0.45)',
+                borderRadius: 6,
+                padding: '10px 12px',
+                marginBottom: 16,
+                lineHeight: 1.6,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}>
+                When restoring, rename the backup back to <span style={{ fontFamily: 'Fira Mono, monospace' }}>Defaults.xml</span> — remove "(backup)" before replacing the original.
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={pendingXmlFile ? handleBackupPendingXml : undefined}
+                  disabled={!pendingXmlFile}
+                  title={pendingXmlFile ? 'Download a backup of the selected Defaults.xml' : 'Select a Defaults.xml first'}
+                  style={{
+                    flex: 1,
+                    minWidth: 140,
+                    background: pendingXmlFile ? '#c94141' : '#5a2f2f',
+                    border: pendingXmlFile ? '1px solid rgba(255,120,120,0.65)' : '1px solid #5a2f2f',
+                    color: '#fff',
+                    fontWeight: 700,
+                    borderRadius: 8,
+                    padding: '10px 16px',
+                    cursor: pendingXmlFile ? 'pointer' : 'not-allowed',
+                    opacity: pendingXmlFile ? 1 : 0.7,
+                    transition: 'background 0.2s, transform 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!pendingXmlFile) return;
+                    e.currentTarget.style.background = '#b23333';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!pendingXmlFile) return;
+                    e.currentTarget.style.background = '#c94141';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }}
+                >
+                  Create Backup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingXmlFile) {
+                      handleImportPendingXml();
+                    } else {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = '.xml';
+                      input.onchange = (e) => {
+                        const selected = e.target.files?.[0];
+                        handleFileSelection(selected);
+                      };
+                      input.click();
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 140,
+                    background: '#2a2a2a',
+                    border: '1px solid #3a3a3a',
+                    color: '#fff',
+                    fontWeight: 700,
+                    borderRadius: 8,
+                    padding: '10px 16px',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#353535'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; }}
+                >
+                  {pendingXmlFile ? 'Import Palette' : 'Choose Defaults.xml'}
+                </button>
+              </div>
+            </div>
 
             {importModalError && (
               <div style={{ color: '#ff8080', fontSize: 13, fontWeight: 600, marginBottom: 18 }}>
