@@ -4833,7 +4833,7 @@ export default function App() {
                 <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase is not running</span> before editing your color palette.<br/>
                 You must import your <b>Defaults.xml</b> from:<br/>
                 <span style={{ color: '#fff', background: '#222', padding: '2px 6px', borderRadius: 5, fontFamily: 'Fira Mono, monospace', fontSize: 13, display: 'inline-block', marginTop: 4 }}>
-                  C:\\Users\\(your username)\\AppData\\Roaming\\Steinberg\\Cubase_14 or Nuendo_14
+                  C:\Users\(your username)\AppData\Roaming\Steinberg\Cubase 14
                 </span>
               </p>
               
