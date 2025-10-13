@@ -5862,23 +5862,26 @@ export default function App() {
 
             <div style={{ color: '#ddd', fontSize: 14, lineHeight: 1.6 }}>
               <p style={{ marginBottom: 12 }}>
-                <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase or Nuendo is not running</span> before editing your color palette.
+                <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase or Nuendo is not running</span> before replacing or editing your <b>Defaults.xml</b>. This ensures the best workflow.
               </p>
 
 
               <h3 style={{ color: '#fff', marginTop: 12, marginBottom: 10 }}>Using the Cubendo Palette Editor</h3>
               <ol style={{ marginLeft: 16, marginBottom: 12 }}>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Import once:</strong> Open <b>Import</b>, accept the terms, and choose your <b>Defaults.xml</b>. Back up when prompted.
+                  <strong>Import XML:</strong> Follow the prompts to load, and import, your <b>Defaults.xml</b>.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Grid basics:</strong> Up to {MAX_PALETTE_COLORS} colours. Click a swatch to edit. Click the label to copy its HEX or name (see Labels Toggle).
+                  <strong>Grid basics:</strong> Up to 128 colours. Click and drag swatches to re-order, double-click to open the swatch editor. Click the HEX label to copy it to your clipboard.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Reorder:</strong> Drag a swatch to move it. <b>Shift+Drag</b> moves the whole row. Press <b>R</b> or use the toolbar to toggle Row/Swatch mode.
+                  <strong>Row Mode:</strong> Use Row Mode (keystroke <b>R</b>) to reorder swatch rows of 8.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Eyedropper:</strong> Press <b>E</b> to add a colour from anywhere on screen (supported browsers only).
+                  <strong>Swatch Editor:</strong> While the editor is open, use <b>←</b> and <b>→</b> to move between adjacent swatches.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Eyedropper:</strong> Press <b>E</b> to add a colour from anywhere on screen (supported browsers). <b>Alt+Click</b> a swatch, then click another swatch to copy its colour into the first.
                 </li>
                 <li style={{ marginBottom: 8 }}>
                   <strong>Gradient Editor:</strong> Build a start/end, set steps, and click <b>Add</b>. New colours are appended; the grid scrolls to them and the editor stays open for more.
@@ -5901,7 +5904,7 @@ export default function App() {
               </ol>
 
               <p style={{ marginTop: 8, fontSize: 13, color: '#aaa' }}>
-                <strong>Tips:</strong> <b>Ctrl+Click</b> duplicates a swatch. <b>Shift+X</b> removes a row. Keep a backup until you’re happy with the new palette.
+                <strong>Tips:</strong> <b>Ctrl+Click</b> duplicates a swatch. <b>Shift+Click</b> the X on a swatch to remove its entire row. Keep a backup until you’re happy with the new palette.
               </p>
             </div>
             
