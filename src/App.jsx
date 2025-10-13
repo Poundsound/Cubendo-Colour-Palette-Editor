@@ -1449,6 +1449,9 @@ export default function App() {
     if (nextTop != null) {
       container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' });
     }
+    // Briefly highlight the target swatch
+    el.classList.add('swatch-added-highlight');
+    setTimeout(() => el.classList.remove('swatch-added-highlight'), 900);
     scrollTargetIdRef.current = null;
   }, []);
 
@@ -2311,6 +2314,9 @@ export default function App() {
     const truncated = mapped.slice(0, MAX_PALETTE_COLORS);
     setOriginalOrder(truncated.map((c) => c.id));
     pushHistory(truncated);
+    // Reset balance tools/UI when a preset is loaded
+    cancelBalance();
+    resetBalanceUi();
     if (mapped.length > MAX_PALETTE_COLORS) {
       setError(`Preset contains ${mapped.length} colors. Only the first ${MAX_PALETTE_COLORS} were loaded.`);
     }
@@ -3647,7 +3653,12 @@ export default function App() {
                   }
                   const remainingSlots = MAX_PALETTE_COLORS - colors.length;
                   const toAdd = newColors.slice(0, remainingSlots);
-                  if (toAdd.length > 0) pushHistory([...colors, ...toAdd]);
+                  if (toAdd.length > 0) {
+                    // Remember the first new swatch so we can scroll to it (background scrolls even while editor is open)
+                    scrollTargetIdRef.current = toAdd[0].id;
+                    // Push the new colors (keep editor open)
+                    pushHistory([...colors, ...toAdd]);
+                  }
                 }}
                 style={{
                   flex: 1,
@@ -3990,34 +4001,34 @@ export default function App() {
             style={{
               background: '#1a1a1a',
               borderRadius: 12,
-              padding: 32,
+              padding: 24,
               minWidth: 500,
               // Force a wider modal so the new two-column layout is visible
-              width: 'min(980px, 92vw)',
-              maxWidth: '92vw',
-              maxHeight: '90vh',
+              width: 'min(1040px, 94vw)',
+              maxWidth: '94vw',
+              maxHeight: '88vh',
               overflow: 'auto',
               border: '1px solid #333',
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 24, textAlign: 'center', letterSpacing: '0.04em' }}>
-              Import Defaults.xml
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 16, textAlign: 'center', letterSpacing: '0.04em' }}>
+              Import Window
             </div>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28, alignItems: 'flex-start', marginBottom: 10 }}>
-              <div style={{ flex: '2 1 420px', minWidth: 340, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ flex: '2 1 420px', minWidth: 340, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div
                   style={{
                     background: termsCardBackground,
                     border: termsCardBorder,
                     borderRadius: 14,
                     boxShadow: termsCardGlow,
-                    padding: 20,
+                    padding: 16,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 12,
+                    gap: 10,
                     transition: 'background 0.25s ease, border 0.25s ease, box-shadow 0.25s ease'
                   }}
                 >
@@ -4105,11 +4116,11 @@ export default function App() {
                         background: fileSectionBackground,
                         borderRadius: 12,
                         border: fileSectionBorder,
-                        padding: 22,
+                        padding: 18,
                         boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 16,
+                        gap: 12,
                         transition: 'background 0.3s ease, border 0.3s ease, color 0.3s ease'
                       }}
                     >
@@ -4163,7 +4174,7 @@ export default function App() {
                         style={{
                           border: fileDropBorder,
                           borderRadius: 16,
-                          padding: '34px 24px',
+                          padding: '26px 20px',
                           background: fileDropBackground,
                           cursor: hasAcceptedTerms ? 'pointer' : 'not-allowed',
                           transition: 'all 0.2s ease',
@@ -4171,8 +4182,8 @@ export default function App() {
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: 14,
-                          minHeight: 190,
+                          gap: 12,
+                          minHeight: 160,
                           textAlign: 'center',
                           position: 'relative'
                         }}
@@ -4250,14 +4261,14 @@ export default function App() {
                       {/* Location help merged into the Defaults.xml section */}
                       <div
                         style={{
-                          marginTop: 8,
+                          marginTop: 6,
                           background: '#242424',
                           border: '1px solid #3a3a3a',
                           borderRadius: 8,
-                          padding: '12px 14px',
+                          padding: '10px 12px',
                           color: '#cfcfcf',
                           display: 'grid',
-                          gap: 10
+                          gap: 8
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 800 }}>
@@ -4268,16 +4279,16 @@ export default function App() {
                           <strong>Windows:</strong> You may need to show hidden folders first (View → Show → Hidden Items in File Explorer)
                         </div>
                         <div style={{ display: 'grid', gap: 8 }}>
-                          <div style={{ background: '#1f1f1f', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
+                          <div style={{ background: '#1f1f1f', border: '1px solid #3a3a3a', borderRadius: 6, padding: '8px 10px' }}>
                             <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>Windows:</div>
                             <div style={{ fontFamily: 'Fira Mono, monospace', color: '#9ec1ff', fontSize: 12, wordBreak: 'break-all' }}>
-                              C:\\Users\\[your-username]\\AppData\\Roaming\\Steinberg\\Cubase_14 or Nuendo_14\\Presets\\
+                              C:\Users\[your-username]\AppData\Roaming\Steinberg\Cubase 14 or Nuendo 14
                             </div>
                           </div>
-                          <div style={{ background: '#1f1f1f', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
+                          <div style={{ background: '#1f1f1f', border: '1px solid #3a3a3a', borderRadius: 6, padding: '8px 10px' }}>
                             <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>macOS:</div>
                             <div style={{ fontFamily: 'Fira Mono, monospace', color: '#9ec1ff', fontSize: 12, wordBreak: 'break-all' }}>
-                              /Users/[your-username]/Library/Preferences/Cubase_14 or Nuendo_14
+                              /Users/[your-username]/Library/Preferences/Cubase 14 or Nuendo 14
                             </div>
                           </div>
                         </div>
@@ -4312,12 +4323,12 @@ export default function App() {
                           background: backupPanelBackground,
                           borderRadius: 12,
                           border: backupPanelBorder,
-                          padding: 22,
+                          padding: 18,
                           color: backupBodyColor,
                           boxShadow: '0 6px 24px rgba(0,0,0,0.45)',
                           display: 'flex',
                           flexDirection: 'column',
-                          gap: 14,
+                          gap: 12,
                           transition: 'background 0.25s ease, border 0.25s ease, color 0.25s ease, filter 0.25s ease, opacity 0.25s ease',
                           filter: pendingXmlFile ? 'none' : 'blur(4px)',
                           opacity: pendingXmlFile ? 1 : 0.35,
@@ -4644,17 +4655,19 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ flex: '1 1 260px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <div style={{ flex: '1 1 260px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div
                   style={{
                     background: '#262626',
                     borderRadius: 10,
-                    border: '1px solid #2f2f2f',
-                    padding: 22,
+                    border: '1px solid #2f2f2f', 
+                    padding: 16,
                     color: '#dcdcdc',
                     fontSize: 14,
                     lineHeight: 1.8,
-                    boxShadow: '0 12px 28px rgba(0,0,0,0.45)'
+                    boxShadow: '0 12px 28px rgba(0,0,0,0.45)',
+                    maxHeight: 400,
+                    overflowY: 'auto'
                   }}
                 >
                   <div style={{ color: '#fff', fontWeight: 800, fontSize: 18, marginBottom: 14, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Steps</div>
@@ -4677,11 +4690,13 @@ export default function App() {
                     background: '#1e1e1f',
                     borderRadius: 10,
                     border: '1px solid #333',
-                    padding: 18,
+                    padding: 14,
                     color: '#c3c3c3',
                     fontSize: 12,
                     lineHeight: 1.7,
-                    boxShadow: '0 10px 24px rgba(0,0,0,0.4)'
+                    boxShadow: '0 10px 24px rgba(0,0,0,0.4)',
+                    maxHeight: 220,
+                    overflowY: 'auto'
                   }}
                 >
                   <div style={{ color: '#fff', fontWeight: 700, fontSize: 14, marginBottom: 10, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Community Disclaimer</div>
@@ -4731,7 +4746,7 @@ export default function App() {
                     fontWeight: 800,
                     letterSpacing: '0.03em',
                     borderRadius: 12,
-                    padding: '16px 20px',
+                    padding: '14px 18px',
                     cursor: importDisabled ? 'not-allowed' : 'pointer',
                     opacity: importDisabled ? 0.6 : 1,
                     boxShadow: importDisabled
@@ -5585,41 +5600,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Preset Library Button (moved here) */}
-          <div style={{ marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => setShowPresetLibrary(true)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                padding: '10px 12px',
-                borderRadius: 8,
-                background: '#222',
-                border: '1px solid #3a3a3a',
-                color: '#fff',
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: 'pointer',
-                transition: 'background 0.15s, transform 0.15s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#2f2f2f';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#222';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-              title="Browse preset palettes"
-            >
-              <PresetsIcon />
-              <span>Presets</span>
-            </button>
-          </div>
+          
 
           {/* Save Preset Section */}
           <div style={{ marginBottom: 8, opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
@@ -5750,6 +5731,40 @@ export default function App() {
               >
                 <LoadIcon />
                 Load JSON
+              </button>
+
+              {/* Palette Library Button moved below Load JSON */}
+              <button
+                type="button"
+                onClick={() => setShowPresetLibrary(true)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: '#222',
+                  border: '1px solid #3a3a3a',
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s, transform 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#2f2f2f';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#222';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+                title="Browse palettes"
+              >
+                <PresetsIcon />
+                <span>Palettes</span>
               </button>
             </div>
           </div>
