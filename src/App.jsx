@@ -5324,43 +5324,11 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {/* Saturation and Lightness controls */}
+            {/* Saturation and Lightness controls (compact) */}
             <div style={{ width: '100%', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {/* Saturation */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, color: '#eee', fontWeight: 600 }}>Saturation</span>
-                  {editingSat ? (
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={Math.round(gradientSaturation * 100)}
-                      autoFocus
-                      onBlur={() => { setEditingSat(false); }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === 'Escape') setEditingSat(false);
-                      }}
-                      onChange={e => {
-                        let v = Math.max(0, Math.min(100, Number(e.target.value)));
-                        setGradientSaturation(v / 100);
-                      }}
-                      disabled={gradientControlsLocked}
-                      style={{ width: 48, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
-                      aria-label="Edit Saturation %"
-                    />
-                  ) : (
-                    <span
-                      style={{ fontSize: 13, color: gradientControlsLocked ? '#555' : '#bbb', minWidth: 42, textAlign: 'center', cursor: gradientControlsLocked ? 'not-allowed' : 'pointer', padding: '2px 6px', background: gradientControlsLocked ? '#1f1f1f' : '#2a2a2a', borderRadius: 4, fontWeight: 600, opacity: gradientControlsLocked ? 0.5 : 1 }}
-                      tabIndex={gradientControlsLocked ? -1 : 0}
-                      onClick={() => { if (!gradientControlsLocked) setEditingSat(true); }}
-                      onKeyDown={e => { if (!gradientControlsLocked && (e.key === 'Enter' || e.key === ' ')) setEditingSat(true); }}
-                      title={gradientControlsLocked ? 'Locked while end color is manual' : 'Click to edit saturation %'}
-                    >
-                      {Math.round(gradientSaturation * 100)}%
-                    </span>
-                  )}
-                </div>
+              {/* Saturation row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 16, textAlign: 'center', fontSize: 13, color: '#eee', fontWeight: 800 }} title="Saturation">S</span>
                 <input
                   type="range"
                   min={0}
@@ -5369,46 +5337,42 @@ export default function App() {
                   value={gradientSaturation}
                   onChange={e => setGradientSaturation(Number(e.target.value))}
                   disabled={gradientControlsLocked}
-                  style={{ width: '100%', opacity: gradientControlsLocked ? 0.4 : 1 }}
+                  style={{ flex: 1, opacity: gradientControlsLocked ? 0.4 : 1 }}
                   aria-label="Gradient Saturation"
                 />
+                {editingSat ? (
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={Math.round(gradientSaturation * 100)}
+                    autoFocus
+                    onBlur={() => { setEditingSat(false); }}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingSat(false); }}
+                    onChange={e => {
+                      let v = Math.max(0, Math.min(100, Number(e.target.value)));
+                      setGradientSaturation(v / 100);
+                    }}
+                    disabled={gradientControlsLocked}
+                    style={{ width: 56, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
+                    aria-label="Edit Saturation %"
+                  />
+                ) : (
+                  <span
+                    style={{ fontSize: 13, color: gradientControlsLocked ? '#555' : '#bbb', minWidth: 52, textAlign: 'center', cursor: gradientControlsLocked ? 'not-allowed' : 'pointer', padding: '4px 6px', background: gradientControlsLocked ? '#1f1f1f' : '#2a2a2a', borderRadius: 6, fontWeight: 700, opacity: gradientControlsLocked ? 0.5 : 1 }}
+                    tabIndex={gradientControlsLocked ? -1 : 0}
+                    onClick={() => { if (!gradientControlsLocked) setEditingSat(true); }}
+                    onKeyDown={e => { if (!gradientControlsLocked && (e.key === 'Enter' || e.key === ' ')) setEditingSat(true); }}
+                    title={gradientControlsLocked ? 'Locked while end color is manual' : 'Click to edit saturation %'}
+                  >
+                    {Math.round(gradientSaturation * 100)}%
+                  </span>
+                )}
               </div>
-              
-              {/* Lightness (End %) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, color: '#eee', fontWeight: 600 }}>Lightness</span>
-                  {editingEnd ? (
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={gradientEndPct}
-                      autoFocus
-                      onBlur={() => { setEditingEnd(false); }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === 'Escape') setEditingEnd(false);
-                      }}
-                      onChange={e => {
-                        let v = Math.max(0, Math.min(100, Number(e.target.value)));
-                        setGradientEndPct(v);
-                      }}
-                      disabled={gradientControlsLocked}
-                      style={{ width: 48, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
-                      aria-label="Edit Lightness %"
-                    />
-                  ) : (
-                    <span
-                      style={{ fontSize: 13, color: gradientControlsLocked ? '#555' : '#bbb', minWidth: 42, textAlign: 'center', cursor: gradientControlsLocked ? 'not-allowed' : 'pointer', padding: '2px 6px', background: gradientControlsLocked ? '#1f1f1f' : '#2a2a2a', borderRadius: 4, fontWeight: 600, opacity: gradientControlsLocked ? 0.5 : 1 }}
-                      tabIndex={gradientControlsLocked ? -1 : 0}
-                      onClick={() => { if (!gradientControlsLocked) setEditingEnd(true); }}
-                      onKeyDown={e => { if (!gradientControlsLocked && (e.key === 'Enter' || e.key === ' ')) setEditingEnd(true); }}
-                      title={gradientControlsLocked ? 'Locked while end color is manual' : 'Click to edit lightness %'}
-                    >
-                      {gradientEndPct}%
-                    </span>
-                  )}
-                </div>
+
+              {/* Lightness row (End %) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 16, textAlign: 'center', fontSize: 13, color: '#eee', fontWeight: 800 }} title="Lightness">L</span>
                 <input
                   type="range"
                   min={0}
@@ -5417,9 +5381,37 @@ export default function App() {
                   value={gradientEndPct}
                   onChange={e => setGradientEndPct(Number(e.target.value))}
                   disabled={gradientControlsLocked}
-                  style={{ width: '100%', opacity: gradientControlsLocked ? 0.4 : 1 }}
+                  style={{ flex: 1, opacity: gradientControlsLocked ? 0.4 : 1 }}
                   aria-label="Gradient Lightness %"
                 />
+                {editingEnd ? (
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={gradientEndPct}
+                    autoFocus
+                    onBlur={() => { setEditingEnd(false); }}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingEnd(false); }}
+                    onChange={e => {
+                      let v = Math.max(0, Math.min(100, Number(e.target.value)));
+                      setGradientEndPct(v);
+                    }}
+                    disabled={gradientControlsLocked}
+                    style={{ width: 56, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
+                    aria-label="Edit Lightness %"
+                  />
+                ) : (
+                  <span
+                    style={{ fontSize: 13, color: gradientControlsLocked ? '#555' : '#bbb', minWidth: 52, textAlign: 'center', cursor: gradientControlsLocked ? 'not-allowed' : 'pointer', padding: '4px 6px', background: gradientControlsLocked ? '#1f1f1f' : '#2a2a2a', borderRadius: 6, fontWeight: 700, opacity: gradientControlsLocked ? 0.5 : 1 }}
+                    tabIndex={gradientControlsLocked ? -1 : 0}
+                    onClick={() => { if (!gradientControlsLocked) setEditingEnd(true); }}
+                    onKeyDown={e => { if (!gradientControlsLocked && (e.key === 'Enter' || e.key === ' ')) setEditingEnd(true); }}
+                    title={gradientControlsLocked ? 'Locked while end color is manual' : 'Click to edit lightness %'}
+                  >
+                    {gradientEndPct}%
+                  </span>
+                )}
               </div>
             </div>
             <button
