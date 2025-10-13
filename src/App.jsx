@@ -1528,22 +1528,53 @@ export default function App() {
   }, []);
 
   // Undo
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     if (history.length === 0) return;
     setFuture(f => [clonePalette(colors), ...f]);
     setColors(clonePalette(history[history.length - 1]));
     setHistory(h => h.slice(0, -1));
     resetBalanceUi();
-  };
+  }, [history, colors, resetBalanceUi]);
 
   // Redo
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (future.length === 0) return;
     setHistory(h => [...h, clonePalette(colors)]);
     setColors(clonePalette(future[0]));
     setFuture(f => f.slice(1));
     resetBalanceUi();
-  };
+  }, [future, colors, resetBalanceUi]);
+
+  // Global keyboard shortcuts: Undo/Redo
+  useEffect(() => {
+    const onKey = (e) => {
+      // Ignore if typing in an input/textarea/contentEditable
+      const tag = e.target.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
+      if (isInput) return;
+
+      const key = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey; // Ctrl on Win/Linux, Cmd on macOS
+
+      // Undo: Ctrl/Cmd + Z (no Shift)
+      if (mod && !e.shiftKey && key === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      // Redo options:
+      // - Ctrl/Cmd + Shift + Z (common on macOS and supported generally)
+      // - Ctrl + Y (common on Windows)
+      if (mod && ((e.shiftKey && key === 'z') || key === 'y')) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleUndo, handleRedo]);
 
   const closeImportModal = useCallback(() => {
     setShowImportModal(false);
@@ -5896,7 +5927,7 @@ export default function App() {
                   <strong>Palettes & JSON:</strong> <b>Save JSON</b> and <b>Load JSON</b> for sharing. Browse community and saved sets in <b>Palettes</b>.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Undo/Redo:</strong> Use the toolbar buttons to revert or reapply changes.
+                  <strong>Undo/Redo:</strong> Use the toolbar buttons, or keyboard: <b>Ctrl/Cmd+Z</b> to undo, <b>Ctrl+Y</b> or <b>Ctrl/Cmd+Shift+Z</b> to redo.
                 </li>
                 <li style={{ marginBottom: 8 }}>
                   <strong>Export:</strong> When finished, click <b>Export</b> to download a new <b>Defaults.xml</b> with your colours.
