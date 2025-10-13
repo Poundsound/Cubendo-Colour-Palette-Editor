@@ -145,6 +145,9 @@ export function serializeDefaultsXml(doc, { includeXmlDeclaration = true, encodi
     // Only prepend if not already present
     if (!xml.trimStart().startsWith('<?xml')) {
       xml = decl + (windowsLineEndings ? '\r\n' : '\n') + xml;
+    } else {
+      // Ensure a newline after the existing declaration
+      xml = xml.replace(/^<\?xml[^>]*\?>(?!\r?\n)/, (m) => m + (windowsLineEndings ? '\r\n' : '\n'));
     }
   }
   if (windowsLineEndings) {
