@@ -850,6 +850,23 @@ export default function App() {
   const [showBackupHelp, setShowBackupHelp] = useState(false);
   const [hasViewedBackupHelp, setHasViewedBackupHelp] = useState(false);
   const [needsBackupConfirm, setNeedsBackupConfirm] = useState(false);
+  // Footer visibility (persisted)
+  const [showFooter, setShowFooter] = useState(() => {
+    try {
+      const v = localStorage.getItem('cpe-show-footer');
+      return v ? JSON.parse(v) : true;
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpe-show-footer', JSON.stringify(showFooter));
+    } catch (e) {
+      // Ignore storage errors (e.g., private mode), but keep a reference to avoid empty block lint
+      void e;
+    }
+  }, [showFooter]);
   // Toggle for swatch labels: hex codes vs color names
   const [showColorNames, setShowColorNames] = useState(() => {
     try {
@@ -2628,6 +2645,25 @@ export default function App() {
 
           {/* Divider */}
           <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
+
+          {/* Footer visibility toggle (F) */}
+          <button
+            onClick={() => setShowFooter((v) => !v)}
+            title={showFooter ? 'Hide footer' : 'Show footer'}
+            aria-pressed={!showFooter}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              background: showFooter ? '#2a2a2a' : '#334155', color: '#fff',
+              border: '1px solid #333', borderRadius: 7, padding: '7px 10px',
+              fontWeight: 800, fontSize: 12, width: 32, cursor: 'pointer', transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = showFooter ? '#333' : '#3b4966'; showHint('🦶', 'Footer', showFooter ? 'Click to hide footer' : 'Click to show footer'); }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = showFooter ? '#2a2a2a' : '#334155'; clearHint(); }}
+            onFocus={() => showHint('🦶', 'Footer', showFooter ? 'Hide footer' : 'Show footer')}
+            onBlur={clearHint}
+          >
+            F
+          </button>
 
           {/* Delete All */}
           <button
@@ -6037,7 +6073,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Footer */}
+    {/* Footer */}
+    {showFooter && (
   <footer className="app-footer" style={{ position: 'relative' }}>
         <img
           src={LogoCubendo}
@@ -6193,6 +6230,7 @@ export default function App() {
           </button>
         </div>
       </footer>
+      )}
     </div>
   );
 }
