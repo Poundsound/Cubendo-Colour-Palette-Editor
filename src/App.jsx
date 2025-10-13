@@ -5,7 +5,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { DndProvider, useDrag, useDrop, useDragLayer } from 'react-dnd';
 import { HTML5Backend, getEmptyImage } from 'react-dnd-html5-backend';
 import { v4 as uuidv4 } from 'uuid';
-import { parseDefaultsXml, extractEventColors, updateEventColors } from './utils/cubaseXml';
+import { parseDefaultsXml, extractEventColors, updateEventColors, serializeDefaultsXml } from './utils/cubaseXml';
 import { FileIcon, FolderIcon, BulbIcon } from './components/Icons';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
 import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon, SwatchModeIcon, RowModeIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
@@ -878,6 +878,59 @@ export default function App() {
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
   const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
   const backupDisabled = !pendingXmlFile || !hasAcceptedTerms;
+
+  // Dynamic footer tips: rotate through context-aware helpers
+  const tips = useMemo(() => {
+    const arr = [];
+    if (!xmlDoc) {
+      arr.push({ icon: '📥', label: 'Import XML', text: 'Open Import to load your Defaults.xml.' });
+    }
+    if (screenPickSupported) {
+      arr.push({ icon: '💡', label: 'Eyedropper', text: 'Press E to add a colour from anywhere on screen.' });
+    }
+    arr.push({ icon: '🧱', label: 'Row Mode', text: 'Press R to reorder swatch rows of 8.' });
+    arr.push({ icon: '➕', label: 'Duplicate', text: 'Ctrl+Click duplicates a swatch next to itself.' });
+    arr.push({ icon: '🗑️', label: 'Remove Row', text: 'Shift+Click the X to remove a swatch’s entire row.' });
+    arr.push({ icon: '🏷️', label: 'Labels', text: showColorNames ? 'Labels showing Names — toggle to HEX in the toolbar.' : 'Labels showing HEX — toggle to Names in the toolbar.' });
+    arr.push({ icon: '↩️', label: 'Undo/Redo', text: 'Ctrl/Cmd+Z undo; Ctrl+Y or Ctrl/Cmd+Shift+Z redo.' });
+    if (!paletteAtCapacity) {
+      arr.push({ icon: '🌈', label: 'Gradient', text: 'Use Gradient Editor; new colours append and auto-scroll into view.' });
+    } else {
+      arr.push({ icon: '⚠️', label: 'Capacity', text: `Palette is full (${MAX_PALETTE_COLORS}). Remove a swatch to add more.` });
+    }
+    if (xmlDoc && colors.length > 0) {
+      arr.push({ icon: '📤', label: 'Export', text: 'Export to create a new Defaults.xml with your colours.' });
+    }
+    return arr;
+  }, [xmlDoc, screenPickSupported, showColorNames, paletteAtCapacity, colors.length]);
+
+  const [tipIndex, setTipIndex] = useState(0);
+  const [pauseTips, setPauseTips] = useState(false);
+  const [footerHint, setFooterHint] = useState(null); // {icon, label, text}
+
+  const showHint = useCallback((icon, label, text) => {
+    setFooterHint({ icon, label, text });
+  }, []);
+  const clearHint = useCallback(() => setFooterHint(null), []);
+
+  // Keep index in bounds when tips length changes
+  useEffect(() => {
+    if (tips.length === 0) {
+      setTipIndex(0);
+      return;
+    }
+    setTipIndex(i => i % tips.length);
+  }, [tips.length]);
+
+  // Auto-rotate tips when not paused and no contextual hint is shown
+  useEffect(() => {
+    if (pauseTips || footerHint || tips.length <= 1) return;
+    const id = setInterval(() => {
+      setTipIndex(i => (i + 1) % tips.length);
+    }, 6000);
+    return () => clearInterval(id);
+  }, [pauseTips, footerHint, tips.length]);
+
   const importDisabled = !pendingXmlFile || !hasAcceptedTerms || needsBackupConfirm || (!hasCreatedBackup && !hasSkippedBackup);
   // Disable Skip when a backup is already created to avoid conflicting choices
   const skipDisabled = backupDisabled || hasCreatedBackup;
@@ -1797,8 +1850,7 @@ export default function App() {
     if (!xmlDoc) return;
     // Only update Event Colors, leave everything else intact
     const doc = updateEventColors(xmlDoc, colors.map(c => c.color));
-    const serializer = new window.XMLSerializer();
-    const xml = serializer.serializeToString(doc);
+    const xml = serializeDefaultsXml(doc, { includeXmlDeclaration: true, encoding: 'utf-8', windowsLineEndings: true });
     const blob = new Blob([xml], { type: 'application/xml' });
     saveAs(blob, 'Defaults.xml');
   };
@@ -2385,8 +2437,10 @@ export default function App() {
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#333'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#2a2a2a'}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; showHint('📥', 'Import XML', 'Load your Defaults.xml to start editing colours.'); }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+            onFocus={() => showHint('📥', 'Import XML', 'Load your Defaults.xml to start editing colours.')}
+            onBlur={clearHint}
           >
             <ImportIcon />
             Import XML
@@ -2396,8 +2450,10 @@ export default function App() {
           <button onClick={handleCreateBackup} disabled={!xmlDoc} style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: !xmlDoc?0.5:1, cursor: !xmlDoc?'not-allowed':'pointer', transition: 'background 0.15s'
           }}
-          onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; }}
-          onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; }}
+          onMouseEnter={(e) => { if (xmlDoc) e.currentTarget.style.background = '#333'; showHint('🛟', 'Backup', 'Create a safety copy of your current Defaults.xml.'); }}
+          onMouseLeave={(e) => { if (xmlDoc) e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+          onFocus={() => showHint('🛟', 'Backup', 'Create a safety copy of your current Defaults.xml.')}
+          onBlur={clearHint}
           >
             <BackupIcon />
             Backup
@@ -2407,8 +2463,10 @@ export default function App() {
           <button onClick={handleDownload} disabled={colors.length===0} style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
           }}
-          onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; }}
-          onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+          onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; showHint('📤', 'Export XML', 'Download a new Defaults.xml with your current palette.'); }}
+          onMouseLeave={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+          onFocus={() => showHint('📤', 'Export XML', 'Download a new Defaults.xml with your current palette.')}
+          onBlur={clearHint}
           >
             <ExportIcon />
             Export XML
@@ -2428,8 +2486,10 @@ export default function App() {
               width: 96,  // fixed width so label switch doesn't shift layout
               cursor: 'pointer', fontWeight: 700, fontSize: 12, letterSpacing: '0.4px', transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = showColorNames ? '#3a2f1b' : '#333'}
-            onMouseLeave={(e) => e.currentTarget.style.background = showColorNames ? '#2f2a1a' : '#2a2a2a'}
+            onMouseEnter={(e) => { e.currentTarget.style.background = showColorNames ? '#3a2f1b' : '#333'; showHint('🏷️', 'Labels', showColorNames ? 'Currently showing Names — click to switch to HEX.' : 'Currently showing HEX — click to switch to Names.'); }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = showColorNames ? '#2f2a1a' : '#2a2a2a'; clearHint(); }}
+            onFocus={() => showHint('🏷️', 'Labels', showColorNames ? 'Currently showing Names — press Enter to switch to HEX.' : 'Currently showing HEX — press Enter to switch to Names.')}
+            onBlur={clearHint}
             aria-pressed={showColorNames}
           >
             <span style={{
@@ -2450,8 +2510,10 @@ export default function App() {
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: (!xmlDoc || paletteAtCapacity) ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: (!xmlDoc || paletteAtCapacity) ? 0.5 : 1, transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#2a2a2a'; }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#333'; showHint('➕', 'Add Color', 'Insert a new swatch at the end of your palette.'); }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity) e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+            onFocus={() => showHint('➕', 'Add Color', (!xmlDoc ? 'Import XML first.' : paletteAtCapacity ? `Palette is full (${MAX_PALETTE_COLORS}).` : 'Insert a new swatch at the end.'))}
+            onBlur={clearHint}
           >
             <AddIcon />
             Add Color
@@ -2470,13 +2532,17 @@ export default function App() {
                 e.currentTarget.style.background = '#333';
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }
+              showHint('🎲', 'Randomize', colors.length === 0 ? 'Add some colours first.' : 'Generate a fresh random palette.');
             }}
             onMouseLeave={(e) => {
               if (colors.length > 0) {
                 e.currentTarget.style.background = '#2a2a2a';
                 e.currentTarget.style.transform = 'translateY(0)';
               }
+              clearHint();
             }}
+            onFocus={() => showHint('🎲', 'Randomize', colors.length === 0 ? 'Add some colours first.' : 'Generate a fresh random palette.')}
+            onBlur={clearHint}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="4" y="4" width="7" height="7" rx="1.4" stroke="#fff" strokeWidth="1.5" />
@@ -2506,8 +2572,10 @@ export default function App() {
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', cursor: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: !xmlDoc || paletteAtCapacity || !screenPickSupported ? 0.5 : 1, transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; }}
+            onMouseEnter={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#333'; showHint('💡', 'Eyedropper', 'Press E or click to pick a colour anywhere on screen.'); }}
+            onMouseLeave={(e) => { if (xmlDoc && !paletteAtCapacity && screenPickSupported) e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+            onFocus={() => showHint('💡', 'Eyedropper', !screenPickSupported ? 'Screen eyedropper not supported.' : 'Press E or click to pick a colour anywhere on screen.')}
+            onBlur={clearHint}
           >
             <EyedropperIcon />
             Eyedropper
@@ -2521,8 +2589,10 @@ export default function App() {
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: history.length===0?0.5:1, cursor: history.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (history.length > 0) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (history.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+            onMouseEnter={(e) => { if (history.length > 0) e.currentTarget.style.background = '#333'; showHint('↩️', 'Undo', 'Ctrl/Cmd+Z to undo your last change.'); }}
+            onMouseLeave={(e) => { if (history.length > 0) e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+            onFocus={() => showHint('↩️', 'Undo', 'Ctrl/Cmd+Z to undo your last change.')}
+            onBlur={clearHint}
           >
             <UndoIcon size={14} />
             Undo
@@ -2534,8 +2604,10 @@ export default function App() {
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: future.length===0?0.5:1, cursor: future.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
             }}
-            onMouseEnter={(e) => { if (future.length > 0) e.currentTarget.style.background = '#333'; }}
-            onMouseLeave={(e) => { if (future.length > 0) e.currentTarget.style.background = '#2a2a2a'; }}
+            onMouseEnter={(e) => { if (future.length > 0) e.currentTarget.style.background = '#333'; showHint('↪️', 'Redo', 'Ctrl+Y or Ctrl/Cmd+Shift+Z to redo.'); }}
+            onMouseLeave={(e) => { if (future.length > 0) e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
+            onFocus={() => showHint('↪️', 'Redo', 'Ctrl+Y or Ctrl/Cmd+Shift+Z to redo.')}
+            onBlur={clearHint}
           >
             <RedoIcon size={14} />
             Redo
@@ -2558,13 +2630,17 @@ export default function App() {
                 e.currentTarget.style.background = '#ff4d4d';
                 e.currentTarget.style.color = '#fff';
               }
+              showHint('🗑️', 'Delete All', colors.length === 0 ? 'No colours to delete.' : 'Remove all swatches from the palette.');
             }}
             onMouseLeave={(e) => { 
               if (colors.length > 0) {
                 e.currentTarget.style.background = '#2a2a2a';
                 e.currentTarget.style.color = '#ff4d4d';
               }
+              clearHint();
             }}
+            onFocus={() => showHint('🗑️', 'Delete All', colors.length === 0 ? 'No colours to delete.' : 'Remove all swatches from the palette.')}
+            onBlur={clearHint}
           >
             <TrashIcon />
             Delete All
@@ -5961,31 +6037,136 @@ export default function App() {
       )}
 
       {/* Footer */}
-      <footer className="app-footer">
+  <footer className="app-footer" style={{ position: 'relative' }}>
         <img
           src={LogoCubendo}
           alt="Cubendo Colour Picker"
           style={{ height: 36, width: 'auto', display: 'block', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.45))' }}
         />
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 16,
-          flex: 1,
-          justifyContent: 'center',
-          fontSize: 12,
-          color: '#aaa'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>💡</span>
-            <span><strong>Tip:</strong> Use the eyedropper to add colors from anywhere on your screen.</span>
-          </div>
-          <span style={{ color: '#444' }}>•</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>✨</span>
-            <span><strong>Row Reorder:</strong> Drag the row handle (⋮⋮) to move rows up or down!</span>
-          </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            flex: 1,
+            justifyContent: 'center',
+            fontSize: 12,
+            color: '#aaa',
+            minHeight: 24,
+          }}
+          onMouseEnter={() => setPauseTips(true)}
+          onMouseLeave={() => setPauseTips(false)}
+        >
+          {footerHint ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span aria-hidden="true">{footerHint.icon}</span>
+              <span>
+                <strong>{footerHint.label}:</strong>{' '}
+                {footerHint.text}
+              </span>
+            </div>
+          ) : tips.length > 0 ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.95 }}>
+                <span aria-hidden="true">{tips[tipIndex]?.icon || '💡'}</span>
+                <span>
+                  <strong>{tips[tipIndex]?.label || 'Tip'}:</strong>{' '}
+                  {tips[tipIndex]?.text || 'Explore the toolbar to discover features.'}
+                </span>
+              </div>
+              {tips.length > 1 && <span style={{ color: '#444' }}>•</span>}
+              {tips.length > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.85 }}>
+                  <span aria-hidden="true">{tips[(tipIndex + 1) % tips.length]?.icon || '✨'}</span>
+                  <span>
+                    <strong>{tips[(tipIndex + 1) % tips.length]?.label || 'Hint'}:</strong>{' '}
+                    {tips[(tipIndex + 1) % tips.length]?.text || 'Use R to toggle Row Mode.'}
+                  </span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ opacity: 0.8 }}>Tips will appear here as you work.</div>
+          )}
         </div>
+        {pauseTips && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 42,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: 10,
+              boxShadow: '0 6px 24px rgba(0,0,0,0.5)',
+              padding: '12px 14px',
+              color: '#ddd',
+              fontSize: 12,
+              zIndex: 1000,
+              width: 'min(900px, 96vw)',
+            }}
+            role="dialog"
+            aria-label="Quick controls"
+          >
+            <div style={{ fontWeight: 700, color: '#fff', marginBottom: 8 }}>Quick controls</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              {xmlDoc ? null : (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                  <span>📥</span>
+                  <span><b>Import XML:</b> Load your Defaults.xml to begin.</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                <span>🧱</span>
+                <span><b>Row Mode (R):</b> Reorder rows of 8.</span>
+              </div>
+              {screenPickSupported && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                  <span>💡</span>
+                  <span><b>Eyedropper (E):</b> Add a colour from anywhere on screen.</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                <span>↔️</span>
+                <span><b>Swatch Editor:</b> Use ← / → to move to adjacent swatches.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                <span>➕</span>
+                <span><b>Duplicate:</b> Ctrl+Click a swatch to duplicate it.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                <span>🗑️</span>
+                <span><b>Remove Row:</b> Shift+Click the X to remove a full row.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                <span>🏷️</span>
+                <span><b>Labels:</b> Toggle HEX/Names in the toolbar.</span>
+              </div>
+              {!paletteAtCapacity ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                  <span>🌈</span>
+                  <span><b>Gradient:</b> Add steps; new colours append and auto-scroll.</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#221a1a', border: '1px solid #443', borderRadius: 6, padding: '6px 8px', color: '#f4c' }}>
+                  <span>⚠️</span>
+                  <span><b>Capacity:</b> Palette is full ({MAX_PALETTE_COLORS}). Remove a swatch to add more.</span>
+                </div>
+              )}
+              {xmlDoc && colors.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                  <span>📤</span>
+                  <span><b>Export:</b> Download a new Defaults.xml with your colours.</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                <span>↩️</span>
+                <span><b>Undo/Redo:</b> Ctrl/Cmd+Z to undo; Ctrl+Y or Ctrl/Cmd+Shift+Z to redo.</span>
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ color: '#bbb', fontSize: 13 }}>Colors: <b style={{ color: '#fff' }}>{colors.length}</b> / {MAX_PALETTE_COLORS}</span>
           <span style={{ color: '#444' }}>|</span>
