@@ -2453,6 +2453,7 @@ export default function App() {
             onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; clearHint(); }}
             onFocus={() => showHint('📥', 'Import XML', 'Load your Defaults.xml to start editing colours.')}
             onBlur={clearHint}
+            className={!xmlDoc ? 'cta-pulse' : ''}
           >
             <ImportIcon />
             Import XML
