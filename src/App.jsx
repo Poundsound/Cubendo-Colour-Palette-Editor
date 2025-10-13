@@ -5070,20 +5070,16 @@ export default function App() {
         </div>
       )}
       
-      <div className="layout">
+  <div className="layout" style={{ filter: !xmlDoc ? 'blur(2px) brightness(0.95)' : 'none', pointerEvents: !xmlDoc ? 'none' : 'auto', transition: 'filter 0.2s ease' }}>
         {/* Left Sidebar */}
         <aside className="sidebar left" style={{ padding: 10, gap: 0 }}>
 
           {/* Round-Trip Test removed */}
           {/* Create Backup moved to right sidebar */}
           {/* Gradient Generator Section */}
-          <div style={{ background: '#232323', borderRadius: 10, padding: 12, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 8, opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto', position: 'relative' }}>
+          <div style={{ background: '#232323', borderRadius: 10, padding: 12, marginBottom: 6, boxShadow: '0 1px 4px #0002', display: 'flex', flexDirection: 'column', gap: 8, opacity: !xmlDoc ? 0.5 : 1, pointerEvents: !xmlDoc ? 'none' : 'auto' }}>
             <div style={{ fontWeight: 800, fontSize: 14, color: '#fff', marginBottom: 4, letterSpacing: '-0.3px' }}>Gradient Generator</div>
-            {!xmlDoc && (
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(35, 35, 35, 0.8)', borderRadius: 10, zIndex: 1 }}>
-                <div style={{ color: '#ff4d4d', fontSize: 14, fontWeight: 600, textAlign: 'center', padding: 20 }}>Import XML first</div>
-              </div>
-            )}
+            {/* Panel is disabled until XML import via opacity/pointerEvents; explicit red warning removed */}
             
             {/* Live Gradient Preview */}
             {(() => {
@@ -5626,7 +5622,7 @@ export default function App() {
                 <div style={{ fontSize: 64 }}>🎨</div>
                 <div style={{ fontSize: 18, fontWeight: 600 }}>No Colors Yet</div>
                 <div style={{ fontSize: 14, textAlign: 'center', maxWidth: 400, lineHeight: 1.6 }}>
-                  Import a Defaults.xml file or click "+ Add Color" to get started
+                  import defaults.xml
                 </div>
               </div>
             ) : dragMode === 'ROW' ? (
