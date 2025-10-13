@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://poundsound.github.io/Cubase-Colour-Palette-Editor",
+  "homepage": "https://poundsound.github.io/Cubendo-Colour-Palette-Editor",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "electron:dev": "concurrently -k \"vite --port 5180 --strictPort\" \"wait-on tcp:5180 && cross-env ELECTRON_START_URL=http://localhost:5180 electron .\"",
+  "electron:dev": "concurrently -k \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
     "electron:start": "electron .",
     "electron:build:app": "vite build",
     "electron:build": "npm run electron:build:app && electron-builder"
@@ -26,7 +26,6 @@
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
     "react-dom": "^19.1.0",
-    "resize-observer-polyfill": "^1.5.1",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
