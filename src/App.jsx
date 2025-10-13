@@ -5859,44 +5859,65 @@ export default function App() {
             onClick={e => e.stopPropagation()}
           >
             <h2 style={{ color: '#ff4d4d', marginTop: 0, marginBottom: 16 }}>Cubase Color Palette Editor 🎨</h2>
-            
+
             <div style={{ color: '#ddd', fontSize: 14, lineHeight: 1.6 }}>
               <p style={{ marginBottom: 12 }}>
-                <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase is not running</span> before editing your color palette.<br/>
-                You must import your <b>Defaults.xml</b> from:<br/>
-                <span style={{ color: '#fff', background: '#222', padding: '2px 6px', borderRadius: 5, fontFamily: 'Fira Mono, monospace', fontSize: 13, display: 'inline-block', marginTop: 4 }}>
-                  C:\Users\(your username)\AppData\Roaming\Steinberg\Cubase 14
-                </span>
+                <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase or Nuendo is not running</span> before editing your color palette.
               </p>
-              
-              <h3 style={{ color: '#fff', marginTop: 20, marginBottom: 12 }}>Getting Started:</h3>
+
+              <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+                <div style={{ color: '#fff', fontWeight: 700 }}>Where to find Defaults.xml</div>
+                <div style={{ fontSize: 12, color: '#bbb' }}>Windows: you may need to enable hidden items (View → Show → Hidden Items) in File Explorer.</div>
+                <div style={{ background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>Windows:</div>
+                  <div style={{ color: '#fff', fontFamily: 'Fira Mono, monospace', fontSize: 13 }}>
+                    C:\Users\[your-username]\AppData\Roaming\Steinberg\Cubase 14 or Nuendo 14
+                  </div>
+                </div>
+                <div style={{ background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
+                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>macOS:</div>
+                  <div style={{ color: '#fff', fontFamily: 'Fira Mono, monospace', fontSize: 13 }}>
+                    /Users/[your-username]/Library/Preferences/Cubase 14 or Nuendo 14
+                  </div>
+                </div>
+              </div>
+
+              <h3 style={{ color: '#fff', marginTop: 12, marginBottom: 10 }}>Using the Cubendo Palette Editor</h3>
               <ol style={{ marginLeft: 16, marginBottom: 12 }}>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Import Defaults.xml:</strong> Click the "Import" button and select your Defaults.xml file from the Cubase directory above.
+                  <strong>Import once:</strong> Open <b>Import</b>, accept the terms, and choose your <b>Defaults.xml</b>. Back up when prompted.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Edit Colours:</strong> Click any colour swatch to open the colour picker. <br/>
-                  <b>Drag</b> a swatch's handle (≡) to reorder it. <br/>
-                  <b>Hold Shift + Drag</b> a swatch handle to select and reorder the entire row. <br/>
-                  <b>Shift+X</b> (delete button) removes the entire row. <br/>
-                  <b>Ctrl+Click</b> a swatch to duplicate it. <br/>
+                  <strong>Grid basics:</strong> Up to {MAX_PALETTE_COLORS} colours. Click a swatch to edit. Click the label to copy its HEX or name (see Labels Toggle).
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Apply a Gradient:</strong> Use the Gradient Generator to create smooth colour transitions.
+                  <strong>Reorder:</strong> Drag a swatch to move it. <b>Shift+Drag</b> moves the whole row. Press <b>R</b> or use the toolbar to toggle Row/Swatch mode.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Balance Palette:</strong> Click "Balance Palette" to harmonise hue, lightness, and saturation.
+                  <strong>Eyedropper:</strong> Press <b>E</b> to add a colour from anywhere on screen (supported browsers only).
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Undo/Redo:</strong> Use the Undo and Redo buttons to revert or reapply changes.
+                  <strong>Gradient Editor:</strong> Build a start/end, set steps, and click <b>Add</b>. New colours are appended; the grid scrolls to them and the editor stays open for more.
                 </li>
                 <li style={{ marginBottom: 8 }}>
-                  <strong>Export:</strong> Once satisfied, click "Export" to download the updated Defaults.xml.
+                  <strong>Balance:</strong> Use <b>Harmonise</b> for even hue/lightness or <b>Pastelise</b> to preserve saturation. Watch the score ring for feedback.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Labels Toggle:</strong> Switch swatch labels between <b>HEX</b> and <b>Names</b> from the toolbar (saved in your browser).
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Palettes & JSON:</strong> <b>Save JSON</b> and <b>Load JSON</b> for sharing. Browse community and saved sets in <b>Palettes</b>.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Undo/Redo:</strong> Use the toolbar buttons to revert or reapply changes.
+                </li>
+                <li style={{ marginBottom: 8 }}>
+                  <strong>Export:</strong> When finished, click <b>Export</b> to download a new <b>Defaults.xml</b> with your colours.
                 </li>
               </ol>
-              
-              <p style={{ marginTop: 16, fontSize: 13, color: '#aaa' }}>
-                <strong>Tip:</strong> Make a backup copy of your Defaults.xml before editing!
+
+              <p style={{ marginTop: 8, fontSize: 13, color: '#aaa' }}>
+                <strong>Tips:</strong> <b>Ctrl+Click</b> duplicates a swatch. <b>Shift+X</b> removes a row. Keep a backup until you’re happy with the new palette.
               </p>
             </div>
             
