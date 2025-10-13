@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
-import ROPolyfill from 'resize-observer-polyfill';
 import './App.css';
 import { saveAs } from 'file-saver';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -1577,7 +1576,7 @@ export default function App() {
     };
     computeCols();
     try {
-      const RO = typeof ResizeObserver === 'function' ? ResizeObserver : ROPolyfill;
+      const RO = typeof ResizeObserver === 'function' ? ResizeObserver : null;
       if (RO) {
         const ro = new RO(() => computeCols());
         ro.observe(el);
