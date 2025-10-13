@@ -9,6 +9,7 @@ import { parseDefaultsXml, extractEventColors, updateEventColors, serializeDefau
 import { FileIcon, FolderIcon, BulbIcon } from './components/Icons';
 import LogoCubendo from './logo/Logo_Cubendo.svg';
 import { ImportIcon, ExportIcon, BackupIcon, AddIcon, EyedropperIcon, PresetsIcon, SaveIcon, LoadIcon, TrashIcon, UndoIcon, RedoIcon, SwatchModeIcon, RowModeIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
+import { useViewportUnits } from './utils/useViewportUnits';
 
 const MAX_PALETTE_COLORS = 128;
 const COPY_ERROR_MESSAGE = 'Unable to copy colour to the clipboard. Please copy it manually.';
@@ -816,6 +817,8 @@ function palettesEqual(a, b) {
 }
 
 export default function App() {
+  // Keep CSS viewport units accurate across browsers (fixes bottom cropping on macOS Safari)
+  useViewportUnits();
   const [colors, setColors] = useState([]); // [{id, color}]
   const [xmlDoc, setXmlDoc] = useState(null);
   const [error, setError] = useState('');
