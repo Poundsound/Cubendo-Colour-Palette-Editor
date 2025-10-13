@@ -1,28 +1,28 @@
-# Cubase 14 Color Palette Editor
+# Cubendo Colour Palette Editor
 
-A user-friendly React app for managing Cubase color palettes. This tool allows you to upload your Cubase `Defaults.xml`, edit up to 32 base colors (with 4 tints each, 128 total), and export a new `Defaults.xml` for use in Cubase. This has not been tested on earlier versions.
+A user-friendly React app for managing Cubase/Nuendo colour palettes. Import your `Defaults.xml`, edit up to 32 base colours (with 4 tints each, 128 total), and export a new `Defaults.xml` for use in Cubase/Nuendo. Tested with Cubase 14; earlier versions are unverified.
 
 ## Features
-- Upload your Cubase `Defaults.xml` file
-- Edit up to 32 base colors, each with 4 tints (128 colors total)
-- Preview and adjust colors in a modern UI
-- Export and download a new `Defaults.xml` with your updated color palette
-- No data is sent to any server; all processing is done locally in your browser
+- Import your Cubase/Nuendo `Defaults.xml`
+- Edit up to 32 base colours, each with 4 tints (128 colours total)
+- Preview and adjust colours in a modern UI
+- Export and download a new `Defaults.xml` with your updated colour palette
+- 100% local: no data is sent to any server; all processing is done in your browser
 
 ## Usage
 
 Before use:
-- Create a backup of your `Defaults.xml` (for example `C:\Users\(USERNAME)\AppData\Roaming\Steinberg\Cubase 14`). Keep the copy somewhere safe so you can restore it immediately if needed.
-- In Cubase, choose "Save Colour Set as Default" and then close the application. This ensures the file you edit is the one Cubase will pick up next launch.
+- Create a backup of your `Defaults.xml`. On Windows the file typically lives under `%APPDATA%\Steinberg\<Cubase or Nuendo version>\Defaults.xml` (e.g. `C:\Users\<USERNAME>\AppData\Roaming\Steinberg\Cubase 14\Defaults.xml`). Keep the copy somewhere safe so you can restore it immediately if needed.
+- In Cubase/Nuendo, choose "Save Colour Set as Default" and then close the application. This ensures the file you edit is the one Cubase/Nuendo will pick up on the next launch.
 
 ![image](https://github.com/user-attachments/assets/8523cc58-a826-49f6-8af5-5f63e089bf3b)
 
 1. Open the app in your web browser.
-2. Click **Upload Defaults.xml** and select your Cubase `Defaults.xml` file. 
-3. Edit the colors as desired using the color pickers. 
-4. Click **Export** to download a new `Defaults.xml` with your changes.
-5. Replace the `Defaults.xml` in your Cubase directorty.
-6. In Cubase open the colour settings and choose "reset colour set to default" - this will pull the new colour palette.
+2. Click **Import XML** and select your `Defaults.xml` file.
+3. Edit the colours as desired using the palette tools.
+4. Click **Export XML** to download a new `Defaults.xml` with your changes.
+5. Replace the `Defaults.xml` in your Cubase/Nuendo directory.
+6. In Cubase/Nuendo open the colour settings and choose "Reset colour set to default" — this will load the new colour palette.
 
 > **Important:** Use Cubendo only for personal projects you are permitted to modify. Do not distribute modified `Defaults.xml` files if doing so violates Steinberg's terms. If you want to share palettes, export them as JSON; those files contain only colour hex codes, and Cubendo can convert them back into the required `Defaults.xml` structure when you apply them locally.
 
