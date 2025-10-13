@@ -10,9 +10,13 @@ function argbIntToHexLocal(argb) {
   return '#' + hex.padStart(6, '0');
 }
 
+// Cubase stores color ints as signed 32-bit ARGB (A=0xFF fixed), often negative in decimal.
+// We must serialize as signed 32-bit to avoid writing large unsigned values (> 2^31-1)
+// which some Cubase versions reject.
 function hexToArgbIntLocal(hex) {
-  const rgb = parseInt(String(hex).replace('#', ''), 16);
-  return (0xFF000000 | rgb) >>> 0;
+  const rgb = parseInt(String(hex).replace('#', ''), 16) >>> 0;
+  const argb = (0xFF000000 | rgb) >>> 0; // uint32 ARGB
+  return argb | 0; // convert to signed 32-bit (may be negative)
 }
 
 export function parseDefaultsXml(text) {

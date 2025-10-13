@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
+import ROPolyfill from 'resize-observer-polyfill';
 import './App.css';
 import { saveAs } from 'file-saver';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -1575,9 +1576,18 @@ export default function App() {
       setColumns(8);
     };
     computeCols();
-    const ro = new ResizeObserver(() => computeCols());
-    ro.observe(el);
-    return () => ro.disconnect();
+    try {
+      const RO = typeof ResizeObserver === 'function' ? ResizeObserver : ROPolyfill;
+      if (RO) {
+        const ro = new RO(() => computeCols());
+        ro.observe(el);
+        return () => ro.disconnect();
+      }
+    } catch {
+      // Ignore ResizeObserver setup issues in non-browser environments
+    }
+    // Fallback: no observer available
+    return () => {};
   }, []);
 
   // Undo

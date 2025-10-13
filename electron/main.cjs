@@ -1,12 +1,13 @@
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 
-const isDev = !app.isPackaged;
+const isDev = !!process.env.ELECTRON_START_URL || !app.isPackaged;
 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
+    backgroundColor: '#1a1a1a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -22,7 +23,7 @@ function createWindow() {
 
   win.loadURL(startUrl);
 
-  if (process.env.ELECTRON_OPEN_DEVTOOLS === 'true') {
+  if (isDev) {
     win.webContents.openDevTools({ mode: 'detach' });
   }
 
@@ -30,6 +31,16 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Forward console and load errors for easier diagnosis
+  win.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const levelMap = { 0: 'log', 1: 'warn', 2: 'error', 3: 'debug' };
+    const lvl = levelMap[level] || 'log';
+    console[lvl](`[renderer:${lvl}] ${message} (${sourceId}:${line})`);
+  });
+  win.webContents.on('did-fail-load', (_event, code, desc, url) => {
+    console.error('Renderer failed to load:', code, desc, url);
   });
 }
 
