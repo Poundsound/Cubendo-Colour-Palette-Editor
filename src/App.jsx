@@ -200,6 +200,7 @@ function DraggableSwatchGrid({
   setDraggingItemId,
   onDragEnd,
   canDrag = true,
+  showColorNames = false,
 }) {
   const ref = useRef(null);
 
@@ -256,6 +257,7 @@ function DraggableSwatchGrid({
       <SwatchDisplay
         id={id}
         color={color}
+        showColorNames={showColorNames}
         onRemove={onRemove}
         onCopy={onCopy}
         copied={copied}
@@ -273,6 +275,7 @@ function DraggableSwatchGrid({
 function SwatchDisplay({
   id,
   color,
+  showColorNames = false,
   onRemove,
   onCopy,
   copied,
@@ -402,10 +405,10 @@ function SwatchDisplay({
           width: '100%',
           marginTop: 4,
           whiteSpace: 'nowrap',
-          fontFamily: 'Fira Mono, monospace',
+          fontFamily: showColorNames ? 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif' : 'Fira Mono, monospace',
           boxSizing: 'border-box',
         }}
-        title="Click to copy color code"
+        title={showColorNames ? 'Click to copy color name' : 'Click to copy color code'}
         tabIndex={0}
         onMouseDown={(e) => {
           e.stopPropagation();
@@ -423,7 +426,7 @@ function SwatchDisplay({
           }
         }}
       >
-        {copied ? 'Copied!' : color}
+        {copied ? 'Copied!' : (showColorNames ? getColorName(color) : color)}
       </span>
     </div>
   );
@@ -431,7 +434,7 @@ function SwatchDisplay({
 
 // Row component using @hello-pangea/dnd's Draggable
 // Row component with drag handle for row-level reordering
-function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, onCopyColor, copiedIndex, columns, canDrag }) {
+function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColor, onCopyColor, copiedIndex, columns, canDrag, showColorNames = false }) {
   return (
     <Draggable draggableId={rowId} index={rowIndex} type="ROW" isDragDisabled={!canDrag}>
       {(provided, snapshot) => {
@@ -498,11 +501,12 @@ function DraggableRow({ rowIndex, rowId, colors, onSwatchClick, handleRemoveColo
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
             gap: 8,
           }}>
-            {colors.map((c) => (
+              {colors.map((c) => (
               <SwatchDisplay
                 key={c.id}
                 id={c.id}
                 color={c.color}
+                  showColorNames={showColorNames}
                 onRemove={handleRemoveColor}
                 onCopy={onCopyColor}
                 copied={copiedIndex === c.id}
@@ -835,6 +839,30 @@ export default function App() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [pendingXmlFile, setPendingXmlFile] = useState(null);
   const [importModalError, setImportModalError] = useState('');
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [hasViewedTerms, setHasViewedTerms] = useState(false);
+  const [hasCreatedBackup, setHasCreatedBackup] = useState(false);
+  const [hasSkippedBackup, setHasSkippedBackup] = useState(false);
+  const [showBackupHelp, setShowBackupHelp] = useState(false);
+  const [hasViewedBackupHelp, setHasViewedBackupHelp] = useState(false);
+  const [needsBackupConfirm, setNeedsBackupConfirm] = useState(false);
+  // Toggle for swatch labels: hex codes vs color names
+  const [showColorNames, setShowColorNames] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cpe-show-color-names');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('cpe-show-color-names', JSON.stringify(showColorNames));
+    } catch {
+      // ignore persistence errors
+    }
+  }, [showColorNames]);
   const gridRef = useRef(null);
   const mainScrollRef = useRef(null);
   const swatchGridRef = useRef(null); // SWATCH mode grid container
@@ -849,6 +877,129 @@ export default function App() {
   const balanceSessionRef = useRef(null);
   const paletteAtCapacity = colors.length >= MAX_PALETTE_COLORS;
   const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
+  const backupDisabled = !pendingXmlFile || !hasAcceptedTerms;
+  const importDisabled = !pendingXmlFile || !hasAcceptedTerms || needsBackupConfirm || (!hasCreatedBackup && !hasSkippedBackup);
+  // Disable Skip when a backup is already created to avoid conflicting choices
+  const skipDisabled = backupDisabled || hasCreatedBackup;
+  const importPalette = hasAcceptedTerms
+    ? {
+        termsBg: '#1f3c24',
+        termsBorder: '2px solid rgba(65, 214, 122, 0.6)',
+        termsHeading: '#dfffe9',
+        termsBody: '#b6f2c6',
+        checkboxAccent: '#41d67a',
+    successBorder: '#41d67a',
+        readButtonBg: '#4d1f20',
+        readButtonBorder: '2px solid rgba(240, 91, 91, 0.7)',
+        readButtonText: '#ffeaea',
+        readButtonHover: '#662828',
+        dropBackground: '#1e2f24',
+        dropBorder: '3px dashed rgba(65, 214, 122, 0.65)',
+        dropTitle: '#f2fff7',
+        dropHelper: '#badcc7',
+        fileHeading: '#f2fff7',
+        fileMeta: '#c5e7d4',
+        backupPanelBackground: '#371d1d',
+        backupPanelBorder: '3px solid rgba(240, 91, 91, 0.55)',
+        createButtonBg: '#8f3a3a',
+        createButtonBorder: '3px solid rgba(240, 91, 91, 0.55)',
+        createButtonText: '#ffeaea',
+        createButtonHover: '#a84545',
+        skipButtonBg: '#35332d',
+        skipButtonBorder: '3px solid rgba(240, 195, 106, 0.6)',
+        skipButtonText: '#ffecc6',
+        skipButtonHover: '#424038',
+        helpButtonBg: '#4d1f20',
+        helpButtonBorder: '3px solid rgba(240, 91, 91, 0.8)',
+        helpButtonText: '#ffe0e0',
+        helpButtonHover: '#5f2425',
+        infoTitle: '#f2fff7',
+        infoText: '#cadfcf',
+      }
+    : {
+        termsBg: '#46351a',
+        termsBorder: '2px solid rgba(240, 195, 106, 0.65)',
+        termsHeading: '#fff3d4',
+        termsBody: '#f5d991',
+        checkboxAccent: '#f0c36a',
+    successBorder: '#41d67a',
+        readButtonBg: '#4d1f20',
+        readButtonBorder: '2px solid rgba(240, 91, 91, 0.7)',
+        readButtonText: '#ffeaea',
+        readButtonHover: '#662828',
+        dropBackground: '#362a1a',
+        dropBorder: '3px dashed rgba(240, 195, 106, 0.65)',
+        dropTitle: '#fff3d4',
+        dropHelper: '#f1d9a3',
+        fileHeading: '#fff3d4',
+        fileMeta: '#f1dea9',
+        backupPanelBackground: '#371d1d',
+        backupPanelBorder: '3px solid rgba(240, 91, 91, 0.55)',
+        createButtonBg: '#8f3a3a',
+        createButtonBorder: '3px solid rgba(240, 91, 91, 0.55)',
+        createButtonText: '#ffeaea',
+        createButtonHover: '#a84545',
+        skipButtonBg: '#35332d',
+        skipButtonBorder: '3px solid rgba(240, 195, 106, 0.6)',
+        skipButtonText: '#ffecc6',
+        skipButtonHover: '#424038',
+        helpButtonBg: '#4d1f20',
+        helpButtonBorder: '3px solid rgba(240, 91, 91, 0.8)',
+        helpButtonText: '#ffdede',
+        helpButtonHover: '#5f2425',
+        infoTitle: '#fff3d4',
+        infoText: '#f1dea9',
+      };
+
+  const hasSelectedXml = Boolean(pendingXmlFile);
+  const fileSectionBackground = '#2a2a2a';
+  const fileSectionBorder = '1px solid rgba(255,255,255,0.08)';
+  const fileSectionHeading = importPalette.fileHeading;
+  const fileSectionSubtle = hasSelectedXml ? importPalette.fileMeta : 'rgba(255,255,255,0.6)';
+  // Keep the drop zone in yellow theme until a file is loaded
+  const fileDropBackground = hasSelectedXml ? '#1e2f24' : '#362a1a';
+  const fileDropBorder = hasSelectedXml ? '3px dashed rgba(65, 214, 122, 0.65)' : '3px dashed rgba(240, 195, 106, 0.65)';
+  const fileDropTitle = hasSelectedXml ? '#f2fff7' : '#fff3d4';
+  const fileDropHelper = hasSelectedXml ? '#badcc7' : '#f1d9a3';
+  const termsCheckboxAccent = importPalette.checkboxAccent;
+  const termsLabelColor = importPalette.termsHeading;
+  const termsInfoColor = importPalette.termsBody;
+  const termsCardBackground = importPalette.termsBg;
+  const termsCardBorder = importPalette.termsBorder;
+  // Backup/Skip panel theming
+  const isBackupComplete = hasCreatedBackup === true;
+  const isSkipSelected = !isBackupComplete && hasSkippedBackup === true;
+
+  const backupPanelBackground = isBackupComplete
+    ? '#1d3326' // green
+    : (isSkipSelected ? '#3a2a12' /* orange */ : importPalette.backupPanelBackground /* red */);
+  const backupPanelBorder = isBackupComplete
+    ? '3px solid rgba(65, 214, 122, 0.65)'
+    : (isSkipSelected ? '3px solid rgba(240, 195, 106, 0.65)' : importPalette.backupPanelBorder);
+  const backupBodyColor = isBackupComplete ? '#e6fff2' : (isSkipSelected ? '#fff1d6' : '#ffe4e4');
+  const backupSubtleText = isBackupComplete ? '#c3f0d5' : (isSkipSelected ? '#ffe3ad' : '#ffc9c9');
+  const backupHintBackground = isBackupComplete
+    ? 'rgba(65, 214, 122, 0.12)'
+    : (isSkipSelected ? 'rgba(240, 195, 106, 0.15)' : 'rgba(240, 91, 91, 0.15)');
+  const backupHintBorder = isBackupComplete
+    ? '1px solid rgba(65, 214, 122, 0.35)'
+    : (isSkipSelected ? '1px solid rgba(240, 195, 106, 0.45)' : '1px solid rgba(240, 91, 91, 0.35)');
+  const backupHintText = isBackupComplete ? '#f0fff8' : (isSkipSelected ? '#fff5db' : '#ffecec');
+  const termsCardGlow = hasAcceptedTerms ? '0 0 0 3px rgba(65,214,122,0.12)' : '0 0 0 3px rgba(240,195,106,0.12)';
+  const readButtonBorder = hasViewedTerms ? '2px solid rgba(65, 214, 122, 0.6)' : importPalette.readButtonBorder;
+  const readButtonDefaultBg = hasViewedTerms ? '#245233' : importPalette.readButtonBg;
+  const gatedSectionStyle = hasAcceptedTerms
+    ? { transition: 'filter 0.25s ease, opacity 0.25s ease' }
+    : {
+        filter: 'blur(3px)',
+        opacity: 0.4,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        transition: 'filter 0.25s ease, opacity 0.25s ease'
+      };
+  const backupHelpButtonBackground = hasViewedBackupHelp ? '#29583a' : importPalette.helpButtonBg;
+  const backupHelpButtonBorder = hasViewedBackupHelp ? '3px solid rgba(65, 214, 122, 0.6)' : importPalette.helpButtonBorder;
+  const backupHelpButtonText = hasViewedBackupHelp ? '#f0fff6' : importPalette.helpButtonText;
 
   const displayedPercentRaw = isBalancing ? balanceProgress : (balanceScore ?? 0);
   const displayedPercent = Math.round(Math.min(100, Math.max(0, displayedPercentRaw)));
@@ -980,6 +1131,27 @@ export default function App() {
   useEffect(() => {
     dragOrderRef.current = colors;
   }, [colors]);
+
+  useEffect(() => {
+    if (showImportModal) {
+      setHasAcceptedTerms(false);
+      setShowTermsModal(false);
+      setHasViewedTerms(false);
+      setHasCreatedBackup(false);
+      setHasSkippedBackup(false);
+      setShowBackupHelp(false);
+      setHasViewedBackupHelp(false);
+      setNeedsBackupConfirm(false);
+    }
+  }, [showImportModal]);
+
+  // Lock background scroll when the import modal is open and center its content
+  useEffect(() => {
+    if (!showImportModal) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [showImportModal]);
   
   // React-DND move callback for SWATCH mode (updates ref only during drag)
   const moveColor = useCallback((dragIndex, hoverIndex) => {
@@ -1374,6 +1546,18 @@ export default function App() {
     setShowImportModal(false);
     setPendingXmlFile(null);
     setImportModalError('');
+    setHasAcceptedTerms(false);
+    setShowTermsModal(false);
+    setHasViewedTerms(false);
+    setHasCreatedBackup(false);
+    setHasSkippedBackup(false);
+    setShowBackupHelp(false);
+    setHasViewedBackupHelp(false);
+  }, []);
+
+  const handleCloseBackupHelp = useCallback(() => {
+    setShowBackupHelp(false);
+    setHasViewedBackupHelp(true);
   }, []);
 
   const loadXmlDocumentFromFile = useCallback(async (file) => {
@@ -1416,43 +1600,163 @@ export default function App() {
   }, []);
 
   const handleFileSelection = useCallback((file) => {
+    if (!hasAcceptedTerms) {
+      setImportModalError('Please acknowledge the terms before choosing a Defaults.xml.');
+      setPendingXmlFile(null);
+      setHasCreatedBackup(false);
+      setHasSkippedBackup(false);
+      setShowBackupHelp(false);
+      setHasViewedBackupHelp(false);
+      setNeedsBackupConfirm(false);
+      return;
+    }
     if (!file) {
       setImportModalError('No file selected.');
       setPendingXmlFile(null);
+      setHasCreatedBackup(false);
+      setHasSkippedBackup(false);
+      setShowBackupHelp(false);
+      setHasViewedBackupHelp(false);
+      setNeedsBackupConfirm(false);
       return;
     }
     if (!file.name.toLowerCase().endsWith('.xml')) {
       setImportModalError('Please choose a .xml file.');
       setPendingXmlFile(null);
+      setHasCreatedBackup(false);
+      setHasSkippedBackup(false);
+      setShowBackupHelp(false);
+      setHasViewedBackupHelp(false);
+      setNeedsBackupConfirm(false);
       return;
     }
     setPendingXmlFile(file);
     setImportModalError('');
     setError('');
-  }, []);
+    setHasCreatedBackup(false);
+    setHasSkippedBackup(false);
+    setShowBackupHelp(false);
+    setHasViewedBackupHelp(false);
+    setNeedsBackupConfirm(false);
+  }, [hasAcceptedTerms]);
+
+  const openXmlFileDialog = useCallback(() => {
+    if (!hasAcceptedTerms) {
+      setImportModalError('Please acknowledge the terms before choosing a Defaults.xml.');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xml';
+    input.onchange = (event) => {
+      const selected = event.target.files?.[0];
+      handleFileSelection(selected);
+    };
+    input.click();
+  }, [handleFileSelection, hasAcceptedTerms]);
 
   const handleImportPendingXml = useCallback(async () => {
     if (!pendingXmlFile) {
       setImportModalError('Select a Defaults.xml file first.');
       return;
     }
+    if (!hasAcceptedTerms) {
+      setImportModalError('Please acknowledge the terms before importing.');
+      return;
+    }
+    if (!hasCreatedBackup && !hasSkippedBackup) {
+      setImportModalError('Create a backup or choose to skip before importing.');
+      return;
+    }
+    setImportModalError('');
     const success = await loadXmlDocumentFromFile(pendingXmlFile);
     if (success) {
-      setPendingXmlFile(null);
+      // Keep pendingXmlFile around so the user can create a backup after import if desired
       closeImportModal();
     }
-  }, [closeImportModal, loadXmlDocumentFromFile, pendingXmlFile]);
+  }, [closeImportModal, hasAcceptedTerms, hasCreatedBackup, hasSkippedBackup, loadXmlDocumentFromFile, pendingXmlFile]);
+
+  const handleToggleSkipBackup = useCallback(() => {
+    if (!pendingXmlFile) {
+      setImportModalError('Select a Defaults.xml file first.');
+      return;
+    }
+    if (!hasAcceptedTerms) {
+      setImportModalError('Please acknowledge the terms before skipping the backup.');
+      return;
+    }
+    setImportModalError('');
+    setHasSkippedBackup((prev) => !prev);
+  }, [hasAcceptedTerms, pendingXmlFile]);
 
   const handleBackupPendingXml = useCallback(() => {
     if (!pendingXmlFile) {
       setImportModalError('Select a Defaults.xml file first.');
       return;
     }
-    const baseName = pendingXmlFile.name.replace(/\.xml$/i, '') || 'Defaults';
-    const cleaned = baseName.replace(/\s*\(backup\)$/i, '').trim();
-    const suggestedName = `${cleaned} (backup).xml`;
-    saveAs(pendingXmlFile, suggestedName);
-  }, [pendingXmlFile]);
+    if (!hasAcceptedTerms) {
+      setImportModalError('Please acknowledge the terms before creating a backup.');
+      return;
+    }
+    const doFallbackDownload = () => {
+      const baseName = pendingXmlFile.name.replace(/\.xml$/i, '') || 'Defaults';
+      const cleaned = baseName.replace(/\s*\(backup\)$/i, '').trim();
+      const suggestedName = `${cleaned} (backup).xml`;
+      saveAs(pendingXmlFile, suggestedName);
+      setNeedsBackupConfirm(true);
+      setHasCreatedBackup(false);
+      setHasSkippedBackup(false);
+      setImportModalError('');
+    };
+
+    try {
+      const hasFS = typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+      if (!hasFS) {
+        doFallbackDownload();
+        return;
+      }
+
+      const baseName = pendingXmlFile.name.replace(/\.xml$/i, '') || 'Defaults';
+      const cleaned = baseName.replace(/\s*\(backup\)$/i, '').trim();
+      const suggestedName = `${cleaned} (backup).xml`;
+
+      const opts = {
+        suggestedName,
+        types: [
+          {
+            description: 'XML file',
+            accept: { 'application/xml': ['.xml'] },
+          },
+        ],
+      };
+
+      // @ts-ignore optional browser API
+      window.showSaveFilePicker(opts)
+        .then(async (handle) => {
+          const writable = await handle.createWritable();
+          const buf = await pendingXmlFile.arrayBuffer();
+          await writable.write(new Blob([buf], { type: 'application/xml' }));
+          await writable.close();
+          setHasCreatedBackup(true);
+          setNeedsBackupConfirm(false);
+          setHasSkippedBackup(false);
+          setImportModalError('');
+        })
+        .catch((err) => {
+          // User canceled or API error; do not mark as backed up
+          const name = (err && err.name) || '';
+          if (name === 'AbortError' || name === 'NotAllowedError') {
+            setImportModalError('Backup was canceled. No file was saved.');
+          } else {
+            setImportModalError('Unable to save using this browser. Please use the download option and confirm.');
+            doFallbackDownload();
+          }
+        });
+    } catch {
+      // Any unexpected error -> fallback
+      doFallbackDownload();
+    }
+  }, [hasAcceptedTerms, pendingXmlFile]);
 
   // Download updated XML
   const handleDownload = () => {
@@ -2076,6 +2380,31 @@ export default function App() {
           {/* Divider */}
           <div style={{ width: 1, height: 24, background: '#333', margin: '0 4px' }} />
 
+          {/* Label mode toggle: Hex <-> Names */}
+          <button
+            onClick={() => setShowColorNames(v => !v)}
+            title={showColorNames ? 'Showing color names (click to show hex codes)' : 'Showing hex codes (click to show color names)'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              background: showColorNames ? '#2f2a1a' : '#2a2a2a',
+              color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 12px',
+              width: 96,  // fixed width so label switch doesn't shift layout
+              cursor: 'pointer', fontWeight: 700, fontSize: 12, letterSpacing: '0.4px', transition: 'background 0.15s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = showColorNames ? '#3a2f1b' : '#333'}
+            onMouseLeave={(e) => e.currentTarget.style.background = showColorNames ? '#2f2a1a' : '#2a2a2a'}
+            aria-pressed={showColorNames}
+          >
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18,
+              background: showColorNames ? '#e6c26a' : '#444', color: '#1a1a1a', borderRadius: 4, fontSize: 11, fontWeight: 900,
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)'
+            }}>
+              {showColorNames ? 'Aa' : '#'}
+            </span>
+            {showColorNames ? 'Names' : 'Hex'}
+          </button>
+
           {/* Add Color */}
           <button
             onClick={handleAddColor}
@@ -2629,11 +2958,11 @@ export default function App() {
                     data-form-type="other"
                   />
                   <div style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: '#888',
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: '#ffffff',
                     textAlign: 'center',
-                    padding: '8px 14px',
+                    padding: '10px 14px',
                     background: '#252525',
                     border: '1px solid #444',
                     borderRadius: 8,
@@ -3288,38 +3617,7 @@ export default function App() {
               })()}
             </div>
 
-            {/* Path Info (final) */}
-            <div style={{ 
-              background: '#2a2a2a',
-              borderRadius: 8,
-              border: '1px solid #3a3a3a',
-              padding: 16,
-              color: '#aaa',
-              fontSize: 12,
-              lineHeight: 1.6
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 700, marginBottom: 8 }}>
-                <FolderIcon size={16} color="#d9d9d9" />
-                <span>Find Your Defaults.xml File</span>
-              </div>
-              <div style={{ marginBottom: 10, color: '#ccc' }}>
-                <strong>Windows:</strong> You may need to show hidden folders first (View → Show → Hidden Items in File Explorer)
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ background: '#242424', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
-                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>Windows:</div>
-                  <div style={{ fontFamily: 'Fira Mono, monospace', color: '#4a9eff', wordBreak: 'break-all' }}>
-                    C:\\Users\\[your-username]\\AppData\\Roaming\\Steinberg\\Cubase_14 or Nuendo_14\\Presets\\
-                  </div>
-                </div>
-                <div style={{ background: '#242424', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
-                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>macOS:</div>
-                  <div style={{ fontFamily: 'Fira Mono, monospace', color: '#4a9eff', wordBreak: 'break-all' }}>
-                    /Users/[your-username]/Library/Preferences/Cubase_14 or Nuendo_14
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Path info removed as requested */}
             <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
               <button
                 type="button"
@@ -3679,11 +3977,11 @@ export default function App() {
             right: 0,
             bottom: 0,
             background: 'rgba(0,0,0,0.85)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: 'grid',
+            placeItems: 'center',
             zIndex: 10000,
-            backdropFilter: 'blur(4px)'
+            backdropFilter: 'blur(4px)',
+            padding: 16
           }}
           onClick={closeImportModal}
         >
@@ -3694,205 +3992,785 @@ export default function App() {
               borderRadius: 12,
               padding: 32,
               minWidth: 500,
-              maxWidth: '90vw',
+              // Force a wider modal so the new two-column layout is visible
+              width: 'min(980px, 92vw)',
+              maxWidth: '92vw',
+              maxHeight: '90vh',
+              overflow: 'auto',
               border: '1px solid #333',
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
             }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 20, textAlign: 'center' }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 24, textAlign: 'center', letterSpacing: '0.04em' }}>
               Import Defaults.xml
             </div>
 
-            {/* Drop Zone */}
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.currentTarget.style.borderColor = '#4a9eff';
-                e.currentTarget.style.background = '#1e2530';
-              }}
-              onDragLeave={(e) => {
-                e.currentTarget.style.borderColor = '#444';
-                e.currentTarget.style.background = '#232323';
-              }}
-              onDrop={async (e) => {
-                e.preventDefault();
-                e.currentTarget.style.borderColor = '#444';
-                e.currentTarget.style.background = '#232323';
-                const file = e.dataTransfer.files[0];
-                handleFileSelection(file);
-              }}
-              style={{
-                border: '2px dashed #444',
-                borderRadius: 10,
-                padding: 40,
-                textAlign: 'center',
-                background: '#232323',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                marginBottom: 20
-              }}
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.xml';
-                input.onchange = (e) => {
-                  const selected = e.target.files?.[0];
-                  handleFileSelection(selected);
-                };
-                input.click();
-              }}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 8, color: '#aaa' }}>
-                {/* Small file glyph above label */}
-                <FileIcon size={18} color="#a8a8a8" />
-                <div style={{ fontSize: 14 }}>Defaults.xml</div>
-              </div>
-              <div style={{ color: '#ddd', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-                Drop your Defaults.xml file here
-              </div>
-              <div style={{ color: '#888', fontSize: 13 }}>
-                or click to browse
-              </div>
-            </div>
-
-            {/* Backup panel: now always visible */}
-            <div
-              style={{
-                marginBottom: 20,
-                background: '#2c1a1a',
-                borderRadius: 10,
-                border: '1px solid #a34444',
-                padding: 22,
-                color: '#ffeaea',
-                boxShadow: '0 6px 24px rgba(0,0,0,0.45)'
-              }}
-            >
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#ffc7c7' }}>Backup strongly recommended</div>
-              {pendingXmlFile ? (
-                <div style={{ fontFamily: 'Fira Mono, monospace', fontSize: 13, marginBottom: 14 }}>
-                  {pendingXmlFile.name}
-                  <span style={{ color: '#ff8d8d', marginLeft: 10 }}>
-                    {(pendingXmlFile.size / 1024).toFixed(1)} KB
-                  </span>
-                </div>
-              ) : (
-                <div style={{ fontSize: 13, marginBottom: 14, color: '#ffbdbd' }}>
-                  Defaults.xml not selected yet — use the drop zone above to choose your file.
-                </div>
-              )}
-              <div style={{ fontSize: 13, color: '#ffb3b3', marginBottom: 12, lineHeight: 1.6 }}>
-                Create a backup copy before importing. This lets you roll back to your current Defaults.xml instantly.
-              </div>
-              <div style={{
-                fontSize: 12,
-                color: '#fff6f6',
-                background: 'rgba(255, 120, 120, 0.18)',
-                border: '1px solid rgba(255, 150, 150, 0.45)',
-                borderRadius: 6,
-                padding: '10px 12px',
-                marginBottom: 16,
-                lineHeight: 1.6,
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
-              }}>
-                When restoring, rename the backup back to <span style={{ fontFamily: 'Fira Mono, monospace' }}>Defaults.xml</span> — remove "(backup)" before replacing the original.
-              </div>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={pendingXmlFile ? handleBackupPendingXml : undefined}
-                  disabled={!pendingXmlFile}
-                  title={pendingXmlFile ? 'Download a backup of the selected Defaults.xml' : 'Select a Defaults.xml first'}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28, alignItems: 'flex-start', marginBottom: 10 }}>
+              <div style={{ flex: '2 1 420px', minWidth: 340, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div
                   style={{
-                    flex: 1,
-                    minWidth: 140,
-                    background: pendingXmlFile ? '#c94141' : '#5a2f2f',
-                    border: pendingXmlFile ? '1px solid rgba(255,120,120,0.65)' : '1px solid #5a2f2f',
-                    color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: 8,
-                    padding: '10px 16px',
-                    cursor: pendingXmlFile ? 'pointer' : 'not-allowed',
-                    opacity: pendingXmlFile ? 1 : 0.7,
-                    transition: 'background 0.2s, transform 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!pendingXmlFile) return;
-                    e.currentTarget.style.background = '#b23333';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!pendingXmlFile) return;
-                    e.currentTarget.style.background = '#c94141';
-                    e.currentTarget.style.transform = 'translateY(0)';
+                    background: termsCardBackground,
+                    border: termsCardBorder,
+                    borderRadius: 14,
+                    boxShadow: termsCardGlow,
+                    padding: 20,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                    transition: 'background 0.25s ease, border 0.25s ease, box-shadow 0.25s ease'
                   }}
                 >
-                  Create Backup
-                </button>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={hasAcceptedTerms}
+                        onChange={(e) => {
+                          setHasAcceptedTerms(e.target.checked);
+                          if (e.target.checked) {
+                            setImportModalError('');
+                          }
+                        }}
+                        style={{ width: 18, height: 18, accentColor: termsCheckboxAccent, cursor: 'pointer' }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span style={{ fontSize: 18, fontWeight: 800, color: termsLabelColor, letterSpacing: '0.04em' }}>Accept Terms</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: termsInfoColor }}>Confirm you agree to the Community Terms of Use</span>
+                      </div>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTermsModal(true);
+                        setHasViewedTerms(true);
+                      }}
+                      style={{
+                        background: readButtonDefaultBg,
+                        border: readButtonBorder,
+                        color: hasViewedTerms ? '#e4fff2' : importPalette.readButtonText,
+                        borderRadius: 8,
+                        padding: '10px 18px',
+                        fontWeight: 800,
+                        letterSpacing: '0.04em',
+                        cursor: 'pointer',
+                        textTransform: 'uppercase',
+                        transition: 'background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        const hoverBg = hasViewedTerms ? '#2f7a47' : importPalette.readButtonHover;
+                        e.currentTarget.style.background = hoverBg;
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.35)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = readButtonDefaultBg;
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      {hasViewedTerms ? 'Read Again' : 'Read'}
+                    </button>
+                  </div>
+                  <div style={{ color: termsInfoColor, fontSize: 12, lineHeight: 1.6 }}>
+                    Acceptance is required before choosing a Defaults.xml or creating backups.
+                  </div>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  {!hasAcceptedTerms && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textAlign: 'center',
+                        padding: 26,
+                        color: termsLabelColor,
+                        fontWeight: 700,
+                        fontSize: 14,
+                        letterSpacing: '0.02em',
+                        textShadow: '0 2px 6px rgba(0,0,0,0.6)',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      Accept the terms to unlock the import tools.
+                    </div>
+                  )}
+                  <div style={{ ...gatedSectionStyle, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                    <div
+                      style={{
+                        background: fileSectionBackground,
+                        borderRadius: 12,
+                        border: fileSectionBorder,
+                        padding: 22,
+                        boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16,
+                        transition: 'background 0.3s ease, border 0.3s ease, color 0.3s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: fileSectionHeading, fontWeight: 800, fontSize: 16, letterSpacing: '0.02em' }}>
+                          <FolderIcon size={18} color={fileSectionHeading} />
+                          <span>Defaults.xml</span>
+                        </div>
+                        {pendingXmlFile ? (
+                          <div style={{ fontFamily: 'Fira Mono, monospace', fontSize: 12, color: fileSectionSubtle, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span>{pendingXmlFile.name}</span>
+                            <span style={{ fontWeight: 700 }}>{(pendingXmlFile.size / 1024).toFixed(1)} KB</span>
+                          </div>
+                        ) : (
+                          <div style={{ color: fileSectionSubtle, fontSize: 12 }}>No file selected</div>
+                        )}
+                      </div>
+
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          const activeBorder = hasAcceptedTerms
+                            ? '3px dashed rgba(65, 214, 122, 0.85)'
+                            : '3px dashed rgba(240, 195, 106, 0.85)';
+                          const activeBg = '#323232';
+                          e.currentTarget.style.border = activeBorder;
+                          e.currentTarget.style.background = activeBg;
+                        }}
+                        onDragLeave={(e) => {
+                          e.currentTarget.style.border = fileDropBorder;
+                          e.currentTarget.style.background = fileDropBackground;
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.style.border = fileDropBorder;
+                          e.currentTarget.style.background = fileDropBackground;
+                          if (!hasAcceptedTerms) {
+                            setImportModalError('Please acknowledge the terms before choosing a Defaults.xml.');
+                            return;
+                          }
+                          const file = e.dataTransfer.files[0];
+                          handleFileSelection(file);
+                        }}
+                        onClick={() => {
+                          if (!hasAcceptedTerms) {
+                            setImportModalError('Please acknowledge the terms before choosing a Defaults.xml.');
+                            return;
+                          }
+                          openXmlFileDialog();
+                        }}
+                        style={{
+                          border: fileDropBorder,
+                          borderRadius: 16,
+                          padding: '34px 24px',
+                          background: fileDropBackground,
+                          cursor: hasAcceptedTerms ? 'pointer' : 'not-allowed',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 14,
+                          minHeight: 190,
+                          textAlign: 'center',
+                          position: 'relative'
+                        }}
+                      >
+                        {hasSelectedXml && (
+                          <div
+                            className="ready-pulse"
+                            aria-label="Defaults.xml file loaded and ready"
+                            title="File loaded"
+                            style={{
+                              position: 'absolute',
+                              top: 10,
+                              right: 10,
+                              padding: '4px 10px',
+                              borderRadius: 999,
+                              background: 'rgba(65,214,122,0.2)',
+                              border: '1px solid rgba(65,214,122,0.55)',
+                              color: '#c7f5dc',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              letterSpacing: '0.06em',
+                              textTransform: 'uppercase'
+                            }}
+                          >
+                            Ready
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 18,
+                            background: '#1f1f1f',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)'
+                          }}
+                        >
+                          <LoadIcon size={30} color={fileDropTitle} />
+                        </div>
+                        {hasSelectedXml ? (
+                          <div style={{ display: 'grid', gap: 6, color: fileDropTitle }}>
+                            <div style={{ fontSize: 18, fontWeight: 800 }}>FILE LOADED</div>
+                            <div style={{ fontFamily: 'Fira Mono, monospace', fontSize: 13, color: fileDropHelper }}>
+                              {pendingXmlFile?.name} · {(pendingXmlFile?.size / 1024).toFixed(1)} KB
+                            </div>
+                            <div style={{ fontSize: 13, color: fileDropHelper }}>Click to choose a different file</div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'grid', gap: 6 }}>
+                            <div
+                              style={{
+                                color: fileDropTitle,
+                                fontSize: 18,
+                                fontWeight: 800,
+                                letterSpacing: '0.04em',
+                                textTransform: 'uppercase'
+                              }}
+                            >
+                              Drop your Defaults.xml file here
+                            </div>
+                            <div style={{ color: fileDropHelper, fontSize: 14 }}>or click to browse</div>
+                          </div>
+                        )}
+                      </div>
+
+                      {importModalError && (
+                        <div style={{ color: '#ff9393', fontSize: 12, fontWeight: 700, letterSpacing: '0.02em' }}>
+                          {importModalError}
+                        </div>
+                      )}
+
+                      {/* Location help merged into the Defaults.xml section */}
+                      <div
+                        style={{
+                          marginTop: 8,
+                          background: '#242424',
+                          border: '1px solid #3a3a3a',
+                          borderRadius: 8,
+                          padding: '12px 14px',
+                          color: '#cfcfcf',
+                          display: 'grid',
+                          gap: 10
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 800 }}>
+                          <FolderIcon size={16} color="#d9d9d9" />
+                          <span>Find Your Defaults.xml File</span>
+                        </div>
+                        <div style={{ color: '#dddddd', fontSize: 12 }}>
+                          <strong>Windows:</strong> You may need to show hidden folders first (View → Show → Hidden Items in File Explorer)
+                        </div>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                          <div style={{ background: '#1f1f1f', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
+                            <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>Windows:</div>
+                            <div style={{ fontFamily: 'Fira Mono, monospace', color: '#9ec1ff', fontSize: 12, wordBreak: 'break-all' }}>
+                              C:\\Users\\[your-username]\\AppData\\Roaming\\Steinberg\\Cubase_14 or Nuendo_14\\Presets\\
+                            </div>
+                          </div>
+                          <div style={{ background: '#1f1f1f', border: '1px solid #3a3a3a', borderRadius: 6, padding: '10px 12px' }}>
+                            <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>macOS:</div>
+                            <div style={{ fontFamily: 'Fira Mono, monospace', color: '#9ec1ff', fontSize: 12, wordBreak: 'break-all' }}>
+                              /Users/[your-username]/Library/Preferences/Cubase_14 or Nuendo_14
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ position: 'relative' }}>
+                      {!pendingXmlFile && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 18,
+                            textAlign: 'center',
+                            color: importPalette.textStrong,
+                            fontWeight: 700,
+                            fontSize: 13,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            textShadow: '0 4px 10px rgba(0,0,0,0.45)',
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          Choose your Defaults.xml to enable the backup tools.
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          background: backupPanelBackground,
+                          borderRadius: 12,
+                          border: backupPanelBorder,
+                          padding: 22,
+                          color: backupBodyColor,
+                          boxShadow: '0 6px 24px rgba(0,0,0,0.45)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 14,
+                          transition: 'background 0.25s ease, border 0.25s ease, color 0.25s ease, filter 0.25s ease, opacity 0.25s ease',
+                          filter: pendingXmlFile ? 'none' : 'blur(4px)',
+                          opacity: pendingXmlFile ? 1 : 0.35,
+                          pointerEvents: pendingXmlFile ? 'auto' : 'none',
+                          userSelect: pendingXmlFile ? 'auto' : 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#ffffff' }}>
+                            Backup strongly recommended
+                          </div>
+                          <div
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 999,
+                              background: hasCreatedBackup
+                                ? 'rgba(65,214,122,0.2)'
+                                : (hasSkippedBackup ? 'rgba(240,195,106,0.2)' : 'rgba(240,91,91,0.2)'),
+                              color: hasCreatedBackup
+                                ? '#c7f5dc'
+                                : (hasSkippedBackup ? '#ffe7b7' : '#ffd6d6'),
+                              fontSize: 11,
+                              fontWeight: 800,
+                              letterSpacing: '0.08em',
+                              textTransform: 'uppercase'
+                            }}
+                          >
+                            {hasCreatedBackup ? 'Complete' : (hasSkippedBackup ? 'Skipped' : 'Pending')}
+                          </div>
+                        </div>
+                        {pendingXmlFile ? (
+                          <div style={{ fontFamily: 'Fira Mono, monospace', fontSize: 13 }}>
+                            {pendingXmlFile.name}
+                            <span style={{ color: hasCreatedBackup ? '#8cffb0' : (hasSkippedBackup ? '#ffd07a' : '#ffb4b4'), marginLeft: 10 }}>
+                              {(pendingXmlFile.size / 1024).toFixed(1)} KB
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 13, color: backupBodyColor }}>
+                            Select a Defaults.xml above before importing.
+                          </div>
+                        )}
+                        <div style={{ fontSize: 13, color: backupSubtleText, lineHeight: 1.6 }}>
+                          Create a copy of your Defaults.xml before importing. You can revert instantly if anything goes wrong. If you have manually created a backup copy, you may choose to skip.
+                        </div>
+                        {/* Browser popup hint when using fallback download or no FS Access API */}
+                        {((!('showSaveFilePicker' in window)) || needsBackupConfirm) && (
+                          <div style={{ fontSize: 12, color: backupSubtleText, opacity: 0.85 }}>
+                            Tip: Your browser may show a “Save / Don’t save” confirmation. That’s normal for downloads and helps keep you safe.
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: backupHintText,
+                            background: backupHintBackground,
+                            border: backupHintBorder,
+                            borderRadius: 6,
+                            padding: '10px 12px',
+                            lineHeight: 1.6,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                          }}
+                        >
+                          When restoring, rename the file back to <span style={{ fontFamily: 'Fira Mono, monospace' }}>Defaults.xml</span> before replacing the original.
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
+                            <button
+                              type="button"
+                              onClick={pendingXmlFile ? handleBackupPendingXml : undefined}
+                              disabled={backupDisabled}
+                              title={backupDisabled
+                                ? (!pendingXmlFile
+                                  ? 'Choose a Defaults.xml first'
+                                  : 'Accept the community terms to enable backups.')
+                                : 'Download a backup of the selected Defaults.xml'}
+                              style={{
+                                flex: '1 1 210px',
+                                minWidth: 170,
+                                background: backupDisabled
+                                  ? '#3d361c'
+                                  : (hasCreatedBackup ? '#2f9f61' : importPalette.createButtonBg),
+                                border: backupDisabled
+                                  ? '3px solid #3d361c'
+                                  : (hasCreatedBackup ? `3px solid ${importPalette.successBorder}` : importPalette.createButtonBorder),
+                                color: hasCreatedBackup ? '#e6fff2' : importPalette.createButtonText,
+                                fontWeight: 700,
+                                borderRadius: 8,
+                                padding: '10px 16px',
+                                cursor: backupDisabled ? 'not-allowed' : 'pointer',
+                                opacity: backupDisabled ? 0.7 : 1,
+                                transition: 'background 0.2s, transform 0.2s, box-shadow 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                justifyContent: 'flex-start'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (backupDisabled) return;
+                                const hoverBg = hasCreatedBackup ? '#1f6a3c' : importPalette.createButtonHover;
+                                const hoverShadow = hasCreatedBackup
+                                  ? '0 6px 16px rgba(49, 217, 108, 0.35)'
+                                  : '0 6px 16px rgba(240, 91, 91, 0.35)';
+                                e.currentTarget.style.background = hoverBg;
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                                e.currentTarget.style.boxShadow = hoverShadow;
+                              }}
+                              onMouseLeave={(e) => {
+                                if (backupDisabled) return;
+                                e.currentTarget.style.background = hasCreatedBackup ? '#2f9f61' : importPalette.createButtonBg;
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  borderRadius: 4,
+                                  border: hasCreatedBackup ? `2px solid ${importPalette.successBorder}` : '2px solid rgba(240, 91, 91, 0.55)',
+                                  background: hasCreatedBackup ? '#1f6a3c' : 'transparent',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                {hasCreatedBackup ? (
+                                  <span style={{ color: '#eafff3', fontSize: 12, fontWeight: 900 }}>✓</span>
+                                ) : null}
+                              </span>
+                              <span>{hasCreatedBackup ? 'Backup Created' : 'Create Backup'}</span>
+                            </button>
+                            {/* Removed the extra "Choose Defaults.xml" button as requested */}
+                            <button
+                              type="button"
+                              onClick={!skipDisabled ? handleToggleSkipBackup : undefined}
+                              disabled={skipDisabled}
+                              title={skipDisabled
+                                ? (!pendingXmlFile
+                                    ? 'Choose a Defaults.xml first'
+                                    : (!hasAcceptedTerms
+                                      ? 'Accept the community terms to continue.'
+                                      : (hasCreatedBackup
+                                        ? 'Backup already created. Skipping is disabled.'
+                                        : 'Action unavailable.')))
+                                : (hasSkippedBackup ? 'Undo skip and require a backup again.' : 'Skip creating a backup (not recommended).')}
+                              style={{
+                                flex: '1 1 210px',
+                                minWidth: 170,
+                                background: skipDisabled
+                                  ? (hasCreatedBackup ? '#2a2a2a' : '#3a2a12')
+                                  : (hasSkippedBackup ? '#7a4b1f' : importPalette.skipButtonBg),
+                                border: skipDisabled
+                                  ? (hasCreatedBackup ? '3px solid #2a2a2a' : '3px solid #3a2a12')
+                                  : (hasSkippedBackup ? '3px solid rgba(240, 195, 106, 0.75)' : importPalette.skipButtonBorder),
+                                color: skipDisabled
+                                  ? (hasCreatedBackup ? '#9a9a9a' : importPalette.skipButtonText)
+                                  : (hasSkippedBackup ? '#fff1d6' : importPalette.skipButtonText),
+                                fontWeight: 700,
+                                borderRadius: 8,
+                                padding: '10px 16px',
+                                cursor: skipDisabled ? 'not-allowed' : 'pointer',
+                                opacity: skipDisabled ? 0.7 : 1,
+                                transition: 'background 0.2s, transform 0.2s, box-shadow 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                justifyContent: 'flex-start'
+                              }}
+                              onMouseEnter={(e) => {
+                                if (skipDisabled) return;
+                                const hoverBg = hasSkippedBackup ? '#a3652c' : importPalette.skipButtonHover;
+                                const hoverShadow = hasSkippedBackup
+                                  ? '0 6px 16px rgba(240, 195, 106, 0.35)'
+                                  : '0 6px 16px rgba(224, 176, 74, 0.35)';
+                                e.currentTarget.style.background = hoverBg;
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                                e.currentTarget.style.boxShadow = hoverShadow;
+                              }}
+                              onMouseLeave={(e) => {
+                                if (skipDisabled) return;
+                                e.currentTarget.style.background = hasSkippedBackup ? '#7a4b1f' : importPalette.skipButtonBg;
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: 18,
+                                  height: 18,
+                                  borderRadius: 4,
+                                  border: skipDisabled
+                                    ? (hasCreatedBackup ? '2px solid #3a3a3a' : '2px solid rgba(240, 195, 106, 0.55)')
+                                    : (hasSkippedBackup ? '2px solid rgba(240, 195, 106, 0.75)' : '2px solid rgba(240, 195, 106, 0.55)'),
+                                  background: skipDisabled
+                                    ? (hasCreatedBackup ? '#2a2a2a' : 'transparent')
+                                    : (hasSkippedBackup ? '#4a3416' : 'transparent'),
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                {skipDisabled
+                                  ? (
+                                    <span style={{ color: hasCreatedBackup ? '#999' : '#ffe9bd', fontSize: 11, fontWeight: 900 }}>!</span>
+                                  )
+                                  : (
+                                    hasSkippedBackup
+                                      ? <span style={{ color: '#ffe4b8', fontSize: 11, fontWeight: 900 }}>!</span>
+                                      : <span style={{ color: '#ffe9bd', fontSize: 11, fontWeight: 900 }}>!</span>
+                                    )}
+                              </span>
+                              <span>{hasSkippedBackup ? 'Skip Enabled' : 'Skip Backup'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowBackupHelp(true)}
+                              style={{
+                                flex: '0 0 auto',
+                                background: backupHelpButtonBackground,
+                                border: backupHelpButtonBorder,
+                                color: backupHelpButtonText,
+                                fontWeight: 700,
+                                letterSpacing: '0.02em',
+                                borderRadius: 6,
+                                padding: '8px 14px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                transition: 'background 0.2s ease, border 0.2s ease, box-shadow 0.2s ease, color 0.2s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                const nextBg = hasViewedBackupHelp ? '#32724a' : importPalette.helpButtonHover;
+                                const nextBorder = hasViewedBackupHelp
+                                  ? `3px solid ${importPalette.successBorder}`
+                                  : importPalette.helpButtonBorder;
+                                const nextText = hasViewedBackupHelp ? '#f6fff9' : importPalette.helpButtonText;
+                                e.currentTarget.style.background = nextBg;
+                                e.currentTarget.style.border = nextBorder;
+                                e.currentTarget.style.color = nextText;
+                                e.currentTarget.style.boxShadow = hasViewedBackupHelp
+                                  ? '0 6px 16px rgba(49, 217, 108, 0.25)'
+                                  : '0 6px 16px rgba(240, 91, 91, 0.25)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = backupHelpButtonBackground;
+                                e.currentTarget.style.border = backupHelpButtonBorder;
+                                e.currentTarget.style.color = backupHelpButtonText;
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <span style={{ fontSize: 12, fontWeight: 900, color: backupHelpButtonText }}>?</span>
+                              <span>Help</span>
+                            </button>
+                          </div>
+                          {hasSkippedBackup && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: '#ffe7b7',
+                                background: 'rgba(200, 150, 50, 0.18)',
+                                border: '1px solid rgba(240, 195, 106, 0.6)',
+                                borderRadius: 6,
+                                padding: '10px 12px',
+                                fontWeight: 700,
+                                letterSpacing: '0.04em',
+                                textTransform: 'uppercase'
+                              }}
+                            >
+                              You chose to import without a backup. Continue only if you understand the risk.
+                            </div>
+                          )}
+
+                          {needsBackupConfirm && !hasCreatedBackup && !hasSkippedBackup && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 10,
+                                background: '#2b2b2b',
+                                border: '1px solid #3a3a3a',
+                                borderRadius: 8,
+                                padding: '10px 12px',
+                                color: '#f2f2f2'
+                              }}
+                            >
+                              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                                Finish saving your backup. When done, click “I saved it” to continue.
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => { setHasCreatedBackup(true); setNeedsBackupConfirm(false); setHasSkippedBackup(false); setImportModalError(''); }}
+                                style={{
+                                  background: '#2f9f61',
+                                  border: '1px solid #37c576',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  borderRadius: 8,
+                                  padding: '8px 12px',
+                                  cursor: 'pointer'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = '#1f6a3c'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = '#2f9f61'; }}
+                              >
+                                I saved it
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Location info moved inside the Defaults.xml section above */}
+                    {/* Removed: Default Location callout under Import modal to reduce clutter */}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ flex: '1 1 260px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                <div
+                  style={{
+                    background: '#262626',
+                    borderRadius: 10,
+                    border: '1px solid #2f2f2f',
+                    padding: 22,
+                    color: '#dcdcdc',
+                    fontSize: 14,
+                    lineHeight: 1.8,
+                    boxShadow: '0 12px 28px rgba(0,0,0,0.45)'
+                  }}
+                >
+                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 18, marginBottom: 14, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Steps</div>
+                  <ol style={{ margin: 0, paddingLeft: 24, display: 'grid', gap: 8, fontSize: 14, lineHeight: 1.7 }}>
+                    <li>Quit Cubase or Nuendo.</li>
+                    <li>Choose your Defaults.xml.</li>
+                    <li>Create a backup of the original.</li>
+                    <li>Import the palette and customize.</li>
+                    <li>Export with the Cubendo export button.</li>
+                    <li>Launch Cubase or Nuendo.</li>
+                    <li>Open Project › Project Colour Settings › Options.</li>
+                    <li>Set current set as default and apply.</li>
+                    <li>Add a track and open the colour palette.</li>
+                    <li>Enjoy the refreshed colours.</li>
+                  </ol>
+                </div>
+
+                <div
+                  style={{
+                    background: '#1e1e1f',
+                    borderRadius: 10,
+                    border: '1px solid #333',
+                    padding: 18,
+                    color: '#c3c3c3',
+                    fontSize: 12,
+                    lineHeight: 1.7,
+                    boxShadow: '0 10px 24px rgba(0,0,0,0.4)'
+                  }}
+                >
+                  <div style={{ color: '#fff', fontWeight: 700, fontSize: 14, marginBottom: 10, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Community Disclaimer</div>
+                  <div>
+                    This editor is community-built and not affiliated with Steinberg. Use at your own risk and always keep backups. Your Defaults.xml stays on your device.
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    The maintainer is not responsible for corrupted files, data loss, or any damages from using or misusing this tool.
+                  </div>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {
                     if (pendingXmlFile) {
+                      if (!hasAcceptedTerms) {
+                        setImportModalError('Please acknowledge the terms before importing.');
+                        return;
+                      }
+                      if (!hasCreatedBackup && !hasSkippedBackup) {
+                        setImportModalError('Create a backup or choose to skip before importing.');
+                        return;
+                      }
+                      setImportModalError('');
                       handleImportPendingXml();
                     } else {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = '.xml';
-                      input.onchange = (e) => {
-                        const selected = e.target.files?.[0];
-                        handleFileSelection(selected);
-                      };
-                      input.click();
+                      openXmlFileDialog();
                     }
                   }}
+                  disabled={importDisabled}
+                  title={(() => {
+                    if (!pendingXmlFile) return 'Choose a Defaults.xml file to begin.';
+                    if (!hasAcceptedTerms) return 'Accept the community terms to enable importing.';
+                    if (needsBackupConfirm) return 'Confirm you saved the backup before importing.';
+                    if (!hasCreatedBackup && !hasSkippedBackup) return 'Create a backup or choose skip before importing.';
+                    if (hasSkippedBackup) return 'You acknowledged the risk of importing without a backup.';
+                    return 'Import the selected Defaults.xml palette.';
+                  })()}
                   style={{
-                    flex: 1,
-                    minWidth: 140,
-                    background: '#2a2a2a',
-                    border: '1px solid #3a3a3a',
+                    background: importDisabled
+                      ? '#262626'
+                      : (hasCreatedBackup ? '#2f9f61' : (hasSkippedBackup ? '#a3652c' : '#f55f5f')),
+                    border: importDisabled
+                      ? '1px solid #262626'
+                      : (hasCreatedBackup ? '1px solid #37c576' : (hasSkippedBackup ? '1px solid #f0c36a' : '1px solid #f97777')),
                     color: '#fff',
-                    fontWeight: 700,
-                    borderRadius: 8,
-                    padding: '10px 16px',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s'
+                    fontWeight: 800,
+                    letterSpacing: '0.03em',
+                    borderRadius: 12,
+                    padding: '16px 20px',
+                    cursor: importDisabled ? 'not-allowed' : 'pointer',
+                    opacity: importDisabled ? 0.6 : 1,
+                    boxShadow: importDisabled
+                      ? 'none'
+                      : (hasCreatedBackup
+                        ? '0 10px 24px rgba(49, 217, 108, 0.35)'
+                        : (hasSkippedBackup
+                          ? '0 10px 24px rgba(240, 195, 106, 0.35)'
+                          : '0 10px 24px rgba(245, 95, 95, 0.35)')),
+                    transition: 'background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease'
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#353535'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; }}
+                  onMouseEnter={(e) => {
+                    if (importDisabled) return;
+                    const bg = hasCreatedBackup ? '#1f6a3c' : (hasSkippedBackup ? '#7f4f1e' : '#ff6f6f');
+                    const shadow = hasCreatedBackup
+                      ? '0 12px 28px rgba(49, 217, 108, 0.42)'
+                      : (hasSkippedBackup
+                        ? '0 12px 28px rgba(240, 195, 106, 0.42)'
+                        : '0 12px 28px rgba(255, 111, 111, 0.42)');
+                    e.currentTarget.style.background = bg;
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = shadow;
+                  }}
+                  onMouseLeave={(e) => {
+                    const bg = importDisabled ? '#262626' : (hasCreatedBackup ? '#2f9f61' : (hasSkippedBackup ? '#a3652c' : '#f55f5f'));
+                    const shadow = importDisabled
+                      ? 'none'
+                      : (hasCreatedBackup
+                        ? '0 10px 24px rgba(49, 217, 108, 0.35)'
+                        : (hasSkippedBackup
+                          ? '0 10px 24px rgba(240, 195, 106, 0.35)'
+                          : '0 10px 24px rgba(245, 95, 95, 0.35)'));
+                    e.currentTarget.style.background = bg;
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = shadow;
+                  }}
                 >
                   {pendingXmlFile ? 'Import Palette' : 'Choose Defaults.xml'}
                 </button>
-              </div>
-            </div>
-
-            {importModalError && (
-              <div style={{ color: '#ff8080', fontSize: 13, fontWeight: 600, marginBottom: 18 }}>
-                {importModalError}
-              </div>
-            )}
-
-            {/* Path Info */}
-            <div style={{ 
-              background: '#2a2a2a',
-              borderRadius: 8,
-              border: '1px solid #3a3a3a',
-              padding: 16,
-              color: '#aaa',
-              fontSize: 12,
-              lineHeight: 1.6
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', fontWeight: 600, marginBottom: 8 }}>
-                <FolderIcon size={16} color="#d9d9d9" />
-                <span>Default Location:</span>
-              </div>
-              <div style={{ fontFamily: 'monospace', color: '#4a9eff', marginBottom: 4 }}>
-                C:\Users\[YourName]\AppData\Roaming\Steinberg\Cubase [Version]\Presets\
-              </div>
-              <div style={{ marginTop: 8, fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <BulbIcon size={14} color="#bdbdbd" />
-                <span>Make sure to create a backup before making changes!</span>
               </div>
             </div>
 
@@ -3916,6 +4794,143 @@ export default function App() {
               onMouseLeave={(e) => e.currentTarget.style.background = '#444'}
             >
               Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && showBackupHelp && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 10002
+          }}
+          onClick={handleCloseBackupHelp}
+        >
+          <div
+            style={{
+              background: '#161616',
+              borderRadius: 12,
+              border: '1px solid #3a3a3a',
+              padding: 28,
+              maxWidth: 520,
+              width: '90vw',
+              maxHeight: '85vh',
+              overflow: 'auto',
+              color: '#f2f2f2',
+              boxShadow: '0 18px 44px rgba(0,0,0,0.6)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 16, color: '#fff4cc' }}>How backups work</div>
+            <div style={{ fontSize: 13, lineHeight: 1.7, display: 'grid', gap: 12 }}>
+              <p style={{ margin: 0 }}>
+                When you click <strong>Create Backup</strong>, Cubendo saves a duplicate of the selected Defaults.xml and appends
+                <code style={{ marginLeft: 6, marginRight: 6, padding: '2px 6px', background: '#1f1f1f', borderRadius: 4 }}> (backup).xml</code>
+                to the file name. You pick where it is stored, so place it somewhere you can find again.
+              </p>
+              <p style={{ margin: 0 }}>
+                After you import the XML and build your palette, use the exported Defaults.xml from Cubendo to replace the Defaults.xml in your root folder. If the new file causes issues, delete it, copy the backup into the same folder, and rename it back to
+                <code style={{ marginLeft: 6, padding: '2px 6px', background: '#1f1f1f', borderRadius: 4 }}>Defaults.xml</code>
+                to restore your original configuration.
+              </p>
+              <p style={{ margin: 0 }}>
+                Keep the backup until you are sure the new palette works. You can create additional backups whenever you import a different Defaults.xml.
+              </p>
+              <p style={{ margin: 0 }}>
+                Everything stays on your device because Cubendo processes files locally in your browser and never uploads your Defaults.xml anywhere.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseBackupHelp}
+              style={{
+                marginTop: 22,
+                width: '100%',
+                background: '#2c2c2c',
+                border: '1px solid #3d3d3d',
+                color: '#fff',
+                fontWeight: 600,
+                borderRadius: 8,
+                padding: '10px 14px',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#353535'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#2c2c2c'; }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && showTermsModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 10001
+          }}
+          onClick={() => setShowTermsModal(false)}
+        >
+          <div
+            style={{
+              background: '#151515',
+              borderRadius: 12,
+              border: '1px solid #303030',
+              padding: 28,
+              maxWidth: 540,
+              width: '90vw',
+              maxHeight: '85vh',
+              overflow: 'auto',
+              color: '#e4e4e4',
+              boxShadow: '0 18px 40px rgba(0,0,0,0.55)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: '#fff' }}>Community Terms of Use</div>
+            <div style={{ fontSize: 13, lineHeight: 1.7, display: 'grid', gap: 12 }}>
+              <p style={{ margin: 0 }}>
+                This is a free, open-source color editor that I maintain. I try to make it safe and easy to use, but I can’t guarantee it won’t cause any issues. Please back up your Defaults.xml file and check compatibility with your Cubase or Nuendo setup. This tool has been tested with Cubase 14 and Nuendo 14. It should also work with earlier versions, though export formatting may vary slightly, and more testing is needed.
+              </p>
+              <p style={{ margin: 0 }}>
+                By using this tool, you take responsibility for your own backups and project files. I’m not liable for data loss, configuration issues, or other unexpected problems.
+              </p>
+              <p style={{ margin: 0 }}>
+                Please don’t share modified Defaults.xml files in ways that violate Steinberg’s terms. If you want to share color palettes, export them as JSON, these only contain color codes, and the Cubendo tool can convert them back into Defaults.xml for your own projects.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTermsModal(false)}
+              style={{
+                marginTop: 22,
+                width: '100%',
+                background: '#2f2f2f',
+                border: '1px solid #404040',
+                color: '#fff',
+                fontWeight: 600,
+                borderRadius: 8,
+                padding: '10px 14px',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#3a3a3a'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#2f2f2f'; }}
+            >
+              Close
             </button>
           </div>
         </div>
@@ -4431,7 +5446,7 @@ export default function App() {
             </button>
             <span style={{ fontSize: 12, fontWeight: 600, color: balanceStatusColor, textAlign: 'center' }}>
               {isBalancing
-                ? (isGentleBalance ? 'Gentle harmonising — preserving pastels' : 'Harmonising - aiming for 100%')
+                ? (isGentleBalance ? 'Gentle harmonising, preserving pastels' : 'Harmonising - aiming for 100%')
                 : balanceScore !== null
                   ? `Harmony score ≈ ${Math.min(100, Math.max(0, balanceScore))}%`
                   : isGentleBalance ? 'Gentle mode ready' : 'Ready to harmonise'}
@@ -4512,6 +5527,7 @@ export default function App() {
                             copiedIndex={copiedIndex}
                             columns={columns}
                             canDrag={row.colors.length >= columns}
+                            showColorNames={showColorNames}
                           />
                         ));
                       })()}
@@ -4548,6 +5564,7 @@ export default function App() {
                       setDraggingItemId={setDraggingItemId}
                       onDragEnd={handleDragEnd}
                       canDrag={swatchDragReady}
+                      showColorNames={showColorNames}
                     />
                   ))}
                 </div>
@@ -4793,7 +5810,7 @@ export default function App() {
             title="Click to cancel eyedropper"
             onClick={e => { e.stopPropagation(); setEyedropper(null); }}
           >
-            Eyedropper active — click a swatch to copy its color. Click this banner to cancel.
+            Eyedropper active; click a swatch to copy its color. Click this banner to cancel.
           </div>
         </div>
       )}

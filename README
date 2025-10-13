@@ -11,9 +11,9 @@ A user-friendly React app for managing Cubase color palettes. This tool allows y
 
 ## Usage
 
-Before use, it's advised to create a copy of your `Defaults.xml` file found in (C:\Users\(USERNAME)\AppData\Roaming\Steinberg\Cubase 14) and store it seperately --just in case. 
-
-Prior to using the app, it's worth "saving colour set as default" in Cubase, then close Cubase.
+Before use:
+- Create a backup of your `Defaults.xml` (for example `C:\Users\(USERNAME)\AppData\Roaming\Steinberg\Cubase 14`). Keep the copy somewhere safe so you can restore it immediately if needed.
+- In Cubase, choose "Save Colour Set as Default" and then close the application. This ensures the file you edit is the one Cubase will pick up next launch.
 
 ![image](https://github.com/user-attachments/assets/8523cc58-a826-49f6-8af5-5f63e089bf3b)
 
@@ -24,7 +24,7 @@ Prior to using the app, it's worth "saving colour set as default" in Cubase, the
 5. Replace the `Defaults.xml` in your Cubase directorty.
 6. In Cubase open the colour settings and choose "reset colour set to default" - this will pull the new colour palette.
 
-> **Note:** This app is for personal, non-commercial use only. Redistribution is not permitted. See the LICENSE file for details.
+> **Important:** Use Cubendo only for personal projects you are permitted to modify. Do not distribute modified `Defaults.xml` files if doing so violates Steinberg's terms. If you want to share palettes, export them as JSON; those files contain only colour hex codes, and Cubendo can convert them back into the required `Defaults.xml` structure when you apply them locally.
 
 ## Donationware
 If you find this tool helpful, please consider making a donation to support its development. [Your donation link here]
@@ -32,5 +32,11 @@ If you find this tool helpful, please consider making a donation to support its 
 ## License
 This software is provided as donationware for personal, non-commercial use only. See the [LICENSE](./LICENSE) file for full terms.
 
+## Legal & Safety
+- Cubendo is a community-built tool that runs entirely in your browser; no palette data leaves your machine.
+- The maintainer provides this software without warranties and is not responsible for accidental deletion, data loss, or other damage. You are responsible for verifying backups, testing compatibility, and restoring your configuration if anything goes wrong.
+- Always keep a safe copy of your `Defaults.xml` before importing or exporting. Losing that file can affect multiple Cubase/Nuendo settings.
+- Use the tool only with files you are authorised to modify. For sharing, prefer JSON exports rather than distributing modified `Defaults.xml` files.
+
 ## Disclaimer
-This project is not affiliated with or endorsed by Steinberg Media Technologies GmbH. "Cubase" is a trademark of Steinberg.
+Cubendo is not affiliated with or endorsed by Steinberg Media Technologies GmbH. "Cubase" and "Nuendo" are trademarks of Steinberg.
