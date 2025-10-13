@@ -3243,10 +3243,10 @@ export default function App() {
               <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Support the project</span>
             </div>
             <div style={{ color: '#ccc', fontSize: 14, lineHeight: 1.6 }}>
-              This tool is free and open-source. If it helped you, a small donation keeps it going.
+              If you found this tool useful, please help support my work by adding to the coffee fund ☕️
             </div>
             <a
-              href="https://www.paypal.com/donate"
+              href="https://www.paypal.com/donate/?hosted_button_id=M5R7YKVH2SPQC"
               target="_blank"
               rel="noreferrer noopener"
               style={{
