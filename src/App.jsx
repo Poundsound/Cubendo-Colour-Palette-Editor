@@ -899,6 +899,11 @@ export default function App() {
   const screenPickSupported = useMemo(() => typeof window !== 'undefined' && 'EyeDropper' in window, []);
   const backupDisabled = !pendingXmlFile || !hasAcceptedTerms;
 
+  // Donation modal state (export flow)
+  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [donationCountdown, setDonationCountdown] = useState(5);
+  const donationTimerRef = useRef(null);
+
   // Dynamic footer tips: rotate through context-aware helpers
   const tips = useMemo(() => {
     const arr = [];
@@ -923,6 +928,36 @@ export default function App() {
     }
     return arr;
   }, [xmlDoc, screenPickSupported, showColorNames, paletteAtCapacity, colors.length]);
+
+  // Manage donation modal lifecycle and countdown
+  useEffect(() => {
+    if (!showDonationModal) return undefined;
+    // lock body scroll
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    // start/reset countdown
+    setDonationCountdown(5);
+    if (donationTimerRef.current) {
+      clearInterval(donationTimerRef.current);
+    }
+    donationTimerRef.current = setInterval(() => {
+      setDonationCountdown((s) => {
+        if (s <= 1) {
+          clearInterval(donationTimerRef.current);
+          donationTimerRef.current = null;
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      if (donationTimerRef.current) {
+        clearInterval(donationTimerRef.current);
+        donationTimerRef.current = null;
+      }
+    };
+  }, [showDonationModal]);
 
   const [tipIndex, setTipIndex] = useState(0);
   const [pauseTips, setPauseTips] = useState(false);
@@ -1884,6 +1919,12 @@ export default function App() {
     saveAs(blob, 'Defaults.xml');
   };
 
+  // Begin export flow: show donation modal first
+  const beginExportFlow = () => {
+    if (colors.length === 0) return;
+    setShowDonationModal(true);
+  };
+
   // Edit a color
   // Remove a color
   const handleRemoveColor = (id, deleteRow = false) => {
@@ -2490,7 +2531,7 @@ export default function App() {
           </button>
 
           {/* Export XML */}
-          <button onClick={handleDownload} disabled={colors.length===0} style={{
+          <button onClick={beginExportFlow} disabled={colors.length===0} style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#2a2a2a', color: '#fff', border: '1px solid #333', borderRadius: 7, padding: '7px 14px', fontWeight: 600, fontSize: 13, opacity: colors.length===0?0.5:1, cursor: colors.length===0?'not-allowed':'pointer', transition: 'background 0.15s'
           }}
           onMouseEnter={(e) => { if (colors.length > 0) e.currentTarget.style.background = '#333'; showHint('📤', 'Export XML', 'Download a new Defaults.xml with your current palette.'); }}
@@ -3159,6 +3200,98 @@ export default function App() {
             >
               Done
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Donation modal for Export XML */}
+      {showDonationModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 11000,
+            backdropFilter: 'blur(4px)'
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="donation-heading"
+          onClick={() => setShowDonationModal(false)}
+        >
+          <div
+            style={{
+              background: '#1a1a1a',
+              borderRadius: 12,
+              padding: 22,
+              width: 'min(520px, 92vw)',
+              border: '1px solid #333',
+              boxShadow: '0 10px 36px rgba(0,0,0,0.55)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div id="donation-heading" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Support the project</span>
+            </div>
+            <div style={{ color: '#ccc', fontSize: 14, lineHeight: 1.6 }}>
+              This tool is free and open-source. If it helped you, a small donation keeps it going.
+            </div>
+            <a
+              href="https://www.paypal.com/donate"
+              target="_blank"
+              rel="noreferrer noopener"
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: '#3168B7', color: '#fff', textDecoration: 'none',
+                borderRadius: 8, padding: '10px 16px', fontWeight: 700,
+                border: '1px solid #2b5ea5', boxShadow: '0 3px 10px rgba(0,0,0,0.25)'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#2b5ea5'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#3168B7'; }}
+            >
+              Donate with PayPal
+            </a>
+            <div style={{ color: '#aaa', fontSize: 13 }}>
+              Your download will be available in {donationCountdown}s.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowDonationModal(false)}
+                style={{ background: '#2a2a2a', color: '#eee', border: '1px solid #444', borderRadius: 7, padding: '8px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={donationCountdown > 0}
+                onClick={() => { handleDownload(); setShowDonationModal(false); }}
+                style={{
+                  background: donationCountdown > 0 ? '#3a3a3a' : '#2ecc71',
+                  color: '#fff',
+                  border: '1px solid ' + (donationCountdown > 0 ? '#444' : '#28b463'),
+                  borderRadius: 7,
+                  padding: '8px 14px',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: donationCountdown > 0 ? 'not-allowed' : 'pointer',
+                  boxShadow: donationCountdown > 0 ? 'none' : '0 3px 12px rgba(46,204,113,0.35)'
+                }}
+              >
+                {donationCountdown > 0 ? `Download in ${donationCountdown}s` : 'Download Defaults.xml'}
+              </button>
+            </div>
           </div>
         </div>
       )}
