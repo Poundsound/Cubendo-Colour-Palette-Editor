@@ -5865,22 +5865,6 @@ export default function App() {
                 <b>Important:</b> Please ensure <span style={{ color: '#ff4d4d' }}>Cubase or Nuendo is not running</span> before editing your color palette.
               </p>
 
-              <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-                <div style={{ color: '#fff', fontWeight: 700 }}>Where to find Defaults.xml</div>
-                <div style={{ fontSize: 12, color: '#bbb' }}>Windows: you may need to enable hidden items (View → Show → Hidden Items) in File Explorer.</div>
-                <div style={{ background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
-                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>Windows:</div>
-                  <div style={{ color: '#fff', fontFamily: 'Fira Mono, monospace', fontSize: 13 }}>
-                    C:\Users\[your-username]\AppData\Roaming\Steinberg\Cubase 14 or Nuendo 14
-                  </div>
-                </div>
-                <div style={{ background: '#222', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}>
-                  <div style={{ color: '#ddd', fontWeight: 700, marginBottom: 4 }}>macOS:</div>
-                  <div style={{ color: '#fff', fontFamily: 'Fira Mono, monospace', fontSize: 13 }}>
-                    /Users/[your-username]/Library/Preferences/Cubase 14 or Nuendo 14
-                  </div>
-                </div>
-              </div>
 
               <h3 style={{ color: '#fff', marginTop: 12, marginBottom: 10 }}>Using the Cubendo Palette Editor</h3>
               <ol style={{ marginLeft: 16, marginBottom: 12 }}>
