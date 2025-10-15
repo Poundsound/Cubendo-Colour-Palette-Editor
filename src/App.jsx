@@ -31,6 +31,24 @@ const SOCIAL_ICON_RENDERERS = {
       />
     </svg>
   ),
+  discord: () => (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <path
+        d="M3 4.3c1.6-.6 3.2-.9 4.9-1 .2.3.3.6.4.9 1.5-.1 3-.1 4.5 0 .1-.3.3-.6.4-.9 1.7.1 3.3.4 4.9 1 1.1 1.9 1.8 3.9 2 6-.6.5-1.2.9-1.9 1.2-.8-1-1.6-1.8-2.5-2.6-.6.3-1.2.6-1.8.8-.1-.2-.2-.4-.3-.6A22 22 0 0 0 10 9a21 21 0 0 0-3.3.2l-.3.6c-.6-.2-1.2-.5-1.8-.8-.9.8-1.7 1.6-2.5 2.6a8 8 0 0 1-1.9-1.2 12 12 0 0 1 2-6Zm3.6 6.8c.8 0 1.4-.7 1.4-1.5 0-.9-.6-1.5-1.4-1.5-.8 0-1.4.6-1.4 1.5 0 .8.6 1.5 1.4 1.5Zm6.8 0c.8 0 1.4-.7 1.4-1.5 0-.9-.6-1.5-1.4-1.5-.8 0-1.4.6-1.4 1.5 0 .8.6 1.5 1.4 1.5ZM5.2 16c1.3.9 2.8 1.4 4.4 1.4s3.1-.5 4.4-1.4c-.2.8-.6 1.5-1 2.1-1 .3-2 .5-3.4.5s-2.4-.2-3.4-.5c-.5-.6-.8-1.3-1-2.1Z"
+        fill="currentColor"
+        fillRule="evenodd"
+      />
+    </svg>
+  ),
+  turtle: () => (
+    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <path
+        d="M10 3c-3.3 0-6 2.6-6 5.7 0 1 .3 1.9.8 2.7l-1.5 1.3a.8.8 0 0 0-.2 1l.4.8c.2.4.7.5 1 .2l1.4-1 1.7 2.6c.2.3.6.4.9.3l.9-.4c.3-.2.4-.6.2-.9l-1.6-2.4h6.2l-1.6 2.4c-.2.3-.1.7.2.9l.9.4c.3.1.7 0 .9-.3l1.7-2.6 1.4 1c.3.3.8.2 1-.2l.4-.8c.2-.3.1-.7-.2-1l-1.5-1.3c.5-.8.8-1.7.8-2.7C16 5.6 13.3 3 10 3Zm0 2.2c2 0 3.6 1.5 3.7 3.4H6.3C6.4 6.7 8 5.2 10 5.2Zm-3.6 5h7.2c-.5 1.3-1.9 2.3-3.6 2.3s-3.1-1-3.6-2.3Z"
+        fill="currentColor"
+        fillRule="evenodd"
+      />
+    </svg>
+  ),
   globe: () => (
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
       <path
@@ -52,6 +70,11 @@ const CURATED_PRESET_META = {
         url: 'https://youtube.com/@poundsound?si=XLQiDHDwN_90E1Vn',
       },
       {
+        icon: 'discord',
+        label: 'Discord',
+        url: 'https://discord.gg/sVdMmKTY',
+      },
+      {
         icon: 'globe',
         label: 'Website',
         url: 'https://www.poundsound.uk',
@@ -71,6 +94,11 @@ const CURATED_PRESET_META = {
         icon: 'globe',
         label: 'Website',
         url: 'https://jasongraves.com/'
+      },
+      {
+        icon: 'turtle',
+        label: 'Sulcata Sound',
+        url: 'https://sulcatasound.com/'
       }
     ],
   },
