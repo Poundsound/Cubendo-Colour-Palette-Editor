@@ -1439,9 +1439,9 @@ export default function App() {
 
   // Helper to push to history (only if changed)
   const pushHistory = useCallback((newColors, options = {}) => {
-  const { preserveScroll = false } = options;
-  const restoreScroll = preserveScroll ? createScrollRestorer() : null;
-    setHistory(h => [...h, clonePalette(colors)]);
+    const { preserveScroll = false, previousColors = null } = options;
+    const restoreScroll = preserveScroll ? createScrollRestorer() : null;
+    setHistory((h) => [...h, clonePalette(previousColors ?? colors)]);
     setFuture([]);
     setColors(clonePalette(newColors));
     if (restoreScroll) restoreScroll();
@@ -2423,7 +2423,7 @@ export default function App() {
   const handleBalancePalette = useCallback(async () => {
     if (colors.length < 2 || isBalancing) return;
 
-  const originalColors = clonePalette(colors);
+    const originalColors = clonePalette(colors);
     const preserveSaturation = balanceMode === 'gentle';
 
     const session = { cancelled: false };
@@ -2437,8 +2437,8 @@ export default function App() {
     let cancelled = false;
 
     try {
-  let workingColors = clonePalette(originalColors);
-  let bestColors = clonePalette(workingColors);
+      let workingColors = clonePalette(originalColors);
+      let bestColors = clonePalette(workingColors);
       let bestScore = calculateHarmonyScore(workingColors);
 
       const iterations = Math.max(10, Math.min(60, colors.length * 2));
@@ -2457,7 +2457,7 @@ export default function App() {
         }
 
         const nextColors = balancePaletteIteration(workingColors, { preserveSaturation });
-  workingColors = clonePalette(nextColors);
+        workingColors = clonePalette(nextColors);
 
         if (shouldAbort()) {
           cancelled = true;
@@ -2504,17 +2504,18 @@ export default function App() {
         return;
       }
 
-      const finalColors = clonePalette(bestColors);
-      const changed = !palettesEqual(originalColors, finalColors);
+      const finalCandidate = preserveSaturation ? clonePalette(workingColors) : clonePalette(bestColors);
+      const changed = !palettesEqual(originalColors, finalCandidate);
 
       if (changed) {
-        setHistory((prev) => [...prev, clonePalette(originalColors)]);
-        setFuture([]);
-        setColors(clonePalette(finalColors));
+        pushHistory(finalCandidate, { preserveScroll: true, previousColors: originalColors });
+      } else {
+        setColors(clonePalette(finalCandidate));
       }
 
+      const finalScore = preserveSaturation ? calculateHarmonyScore(finalCandidate) : bestScore;
       setBalanceProgress(100);
-      setBalanceScore(Math.round(Math.min(100, bestScore)));
+      setBalanceScore(Math.round(Math.min(100, finalScore)));
     } finally {
       if (balanceSessionRef.current === session) {
         balanceSessionRef.current = null;
@@ -2525,7 +2526,7 @@ export default function App() {
       }
       setIsBalancing(false);
     }
-  }, [balanceMode, colors, isBalancing, setColors, setFuture, setHistory]);
+  }, [balanceMode, colors, isBalancing, pushHistory, setColors]);
 
   // Save current palette as a preset
   const handleSavePreset = () => {
