@@ -20,6 +20,8 @@ const DND_ITEM_TYPES = {
 
 const PRESET_CARD_BODY_WIDTH = 168;
 
+const HEX_FULL_RE = /^#[0-9A-F]{6}$/;
+
 const SOCIAL_ICON_RENDERERS = {
   youtube: () => (
     <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -823,6 +825,7 @@ export default function App() {
   const [xmlDoc, setXmlDoc] = useState(null);
   const [error, setError] = useState('');
   const [gradientStart, setGradientStart] = useState('#000000');
+  const [gradientStartBase, setGradientStartBase] = useState('#000000');
   const [gradientEndPct, setGradientEndPct] = useState(60); // 0-100, default 60%
   const [gradientSteps, setGradientSteps] = useState(8);
   const [copiedIndex, setCopiedIndex] = useState(null);
@@ -1986,6 +1989,56 @@ export default function App() {
     : lighten(gradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
   const gradientControlsLocked = gradientManualEnd;
 
+  const applySaturationToHex = useCallback((hex, factor) => {
+    if (typeof hex !== 'string') return hex;
+    let formatted = hex.trim().toUpperCase();
+    if (!formatted.startsWith('#')) formatted = `#${formatted}`;
+    if (!HEX_FULL_RE.test(formatted)) return formatted;
+    const [h, s, l] = hexToHsl(formatted);
+    const multiplier = clamp01(Number.isFinite(factor) ? factor : 1);
+    const adjustedS = clamp01(s * multiplier);
+    return hslToHex(h, adjustedS, l);
+  }, []);
+
+  const syncAutoGradientStart = useCallback((baseHex, saturationValue) => {
+    if (typeof baseHex !== 'string') return baseHex;
+    let normalized = baseHex.trim().toUpperCase();
+    if (!normalized.startsWith('#')) normalized = `#${normalized}`;
+    if (!HEX_FULL_RE.test(normalized)) return normalized;
+    const factor = clamp01(Number.isFinite(saturationValue) ? saturationValue : gradientSaturation);
+    return applySaturationToHex(normalized, factor);
+  }, [applySaturationToHex, gradientSaturation]);
+
+  const applyAutoGradientStart = useCallback((nextSaturation) => {
+    if (gradientManualEnd) return;
+    if (!HEX_FULL_RE.test(gradientStartBase)) return;
+    const adjusted = syncAutoGradientStart(gradientStartBase, nextSaturation);
+    if (adjusted !== gradientStart) {
+      setGradientStart(adjusted);
+    }
+  }, [gradientManualEnd, gradientStartBase, gradientStart, syncAutoGradientStart]);
+
+  const commitGradientStart = useCallback((hexValue) => {
+    if (typeof hexValue !== 'string') return;
+    let normalized = hexValue.trim().toUpperCase();
+    if (!normalized.startsWith('#')) normalized = `#${normalized}`;
+    if (!HEX_FULL_RE.test(normalized)) {
+      setGradientStart(normalized);
+      return;
+    }
+    setGradientStartBase(normalized);
+    if (gradientManualEnd) {
+      if (normalized !== gradientStart) {
+        setGradientStart(normalized);
+      }
+    } else {
+      const adjusted = syncAutoGradientStart(normalized, gradientSaturation);
+      if (adjusted !== gradientStart) {
+        setGradientStart(adjusted);
+      }
+    }
+  }, [gradientManualEnd, gradientSaturation, gradientStart, syncAutoGradientStart]);
+
   const hexToHSV = useCallback((hex) => {
     if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
       return { h: 0, s: 0, v: 0 };
@@ -2010,7 +2063,8 @@ export default function App() {
   }, []);
 
   const openGradientEditor = useCallback(() => {
-    const startHSV = hexToHSV(gradientStart);
+    const startHexForEditor = gradientManualEnd ? gradientStart : gradientStartBase;
+    const startHSV = hexToHSV(startHexForEditor);
     const endHSV = hexToHSV(computedGradientEnd);
     setGradientEditor({
       startH: startHSV.h,
@@ -2021,7 +2075,7 @@ export default function App() {
       endV: endHSV.v,
       manualMode: gradientManualEnd,
     });
-  }, [computedGradientEnd, gradientManualEnd, gradientStart, hexToHSV]);
+  }, [computedGradientEnd, gradientManualEnd, gradientStart, gradientStartBase, hexToHSV]);
 
   useEffect(() => {
     if (gradientControlsLocked) {
@@ -2039,6 +2093,12 @@ export default function App() {
     if (deltaH < 0.1 && deltaS < 0.1 && deltaV < 0.1) return;
     setGradientEditor(prev => (prev ? { ...prev, endH: nextEnd.h, endS: nextEnd.s, endV: nextEnd.v } : prev));
   }, [computedGradientEnd, gradientEditor, hexToHSV]);
+
+  useEffect(() => {
+    if (!gradientManualEnd) {
+      applyAutoGradientStart(gradientSaturation);
+    }
+  }, [applyAutoGradientStart, gradientManualEnd, gradientSaturation]);
 
   // Handle drag end for reordering swatches with @hello-pangea/dnd
   const onDragEnd = (result) => {
@@ -2087,9 +2147,14 @@ export default function App() {
 
   // Helper: lighten a hex color by percent (0-1)
   function lighten(hex, percent) {
-    let rgb = hex.replace('#','').match(/.{2}/g).map(x => parseInt(x,16));
-    rgb = rgb.map(v => Math.round(v + (255-v)*percent));
-    return '#' + rgb.map(x => x.toString(16).padStart(2,'0')).join('').toUpperCase();
+    if (typeof hex !== 'string') return hex;
+    let normalized = hex.trim().toUpperCase();
+    if (!normalized.startsWith('#')) normalized = `#${normalized}`;
+    if (!HEX_FULL_RE.test(normalized)) return normalized;
+    const [h, s, l] = hexToHsl(normalized);
+    const clampedPercent = clamp01(Number.isFinite(percent) ? percent : 0);
+    const nextL = clamp01(l + (1 - l) * clampedPercent);
+    return hslToHex(h, s, nextL);
   }
 
   // Apply gradient to colors
@@ -2948,7 +3013,7 @@ export default function App() {
                 const newColor = hsvToHex(newH, newS, newV);
                 setColorEditor({ ...colorEditor, color: newColor, h: newH, s: newS, v: newV });
                 if (colorEditor.id === 'gradient-start') {
-                  setGradientStart(newColor);
+                  commitGradientStart(newColor);
                 } else {
                   pushHistory(colors.map(c => c.id === colorEditor.id ? { ...c, color: newColor } : c));
                 }
@@ -3101,7 +3166,9 @@ export default function App() {
                     width: 60,
                     height: 60,
                     borderRadius: 8,
-                    background: colorEditor.color,
+                    background: colorEditor.id === 'gradient-start' && !gradientManualEnd
+                      ? syncAutoGradientStart(colorEditor.color, gradientSaturation)
+                      : colorEditor.color,
                     border: '2px solid #333',
                     boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
                     flexShrink: 0
@@ -3116,26 +3183,10 @@ export default function App() {
                       let val = e.target.value.toUpperCase();
                       if (!val.startsWith('#')) val = '#' + val;
                       if (/^#[0-9A-F]{6}$/.test(val)) {
-                        // Calculate HSV from the new hex value
-                        const r = parseInt(val.slice(1, 3), 16) / 255;
-                        const g = parseInt(val.slice(3, 5), 16) / 255;
-                        const b = parseInt(val.slice(5, 7), 16) / 255;
-                        const max = Math.max(r, g, b);
-                        const min = Math.min(r, g, b);
-                        const delta = max - min;
-                        let newH = colorEditor.h; // Preserve hue if color is grayscale
-                        if (delta !== 0) {
-                          if (max === r) newH = ((g - b) / delta) % 6;
-                          else if (max === g) newH = (b - r) / delta + 2;
-                          else newH = (r - g) / delta + 4;
-                          newH *= 60;
-                          if (newH < 0) newH += 360;
-                        }
-                        const newS = max === 0 ? 0 : (delta / max) * 100;
-                        const newV = max * 100;
-                        setColorEditor({ ...colorEditor, color: val, h: newH, s: newS, v: newV });
+                        const hsv = hexToHSV(val);
+                        setColorEditor({ ...colorEditor, color: val, h: hsv.h, s: hsv.s, v: hsv.v });
                         if (colorEditor.id === 'gradient-start') {
-                          setGradientStart(val);
+                          commitGradientStart(val);
                         } else {
                           pushHistory(colors.map(c => c.id === colorEditor.id ? { ...c, color: val } : c));
                         }
@@ -3174,7 +3225,9 @@ export default function App() {
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap'
                   }}>
-                    {getColorName(colorEditor.color)}
+                    {getColorName(colorEditor.id === 'gradient-start' && !gradientManualEnd
+                      ? syncAutoGradientStart(colorEditor.color, gradientSaturation)
+                      : colorEditor.color)}
                   </div>
                 </div>
               </div>
@@ -3384,7 +3437,10 @@ export default function App() {
                 return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
               };
 
-              const startColor = hsvToHex(gradientEditor.startH, gradientEditor.startS, gradientEditor.startV);
+              const baseStartColor = hsvToHex(gradientEditor.startH, gradientEditor.startS, gradientEditor.startV);
+              const startColor = gradientEditor.manualMode
+                ? baseStartColor
+                : syncAutoGradientStart(baseStartColor, gradientSaturation);
               const endColor = hsvToHex(gradientEditor.endH, gradientEditor.endS, gradientEditor.endV);
               
               // Generate gradient colors based on selected steps
@@ -3534,36 +3590,20 @@ export default function App() {
                 };
 
                 const { startH, startS, startV, endH, endS, endV } = gradientEditor;
-                const startColor = hsvToHex(startH, startS, startV);
+                const baseStart = hsvToHex(startH, startS, startV);
+                const startColor = gradientEditor.manualMode
+                  ? baseStart
+                  : syncAutoGradientStart(baseStart, gradientSaturation);
                 const endColor = hsvToHex(endH, endS, endV);
 
                 const updateStart = (newH, newS, newV) => {
                   const newColor = hsvToHex(newH, newS, newV);
-                  setGradientStart(newColor);
-                  
-                  // If in auto mode, update end color based on the new start color
+                  commitGradientStart(newColor);
+
                   if (!gradientEditor.manualMode) {
-                    // Recalculate end color from the new start color
-                    const autoEndColor = lighten(newColor, (gradientEndPct / 100) * MAX_LIGHTEN);
-                    const endHSV = (() => {
-                      const r = parseInt(autoEndColor.slice(1, 3), 16) / 255;
-                      const g = parseInt(autoEndColor.slice(3, 5), 16) / 255;
-                      const b = parseInt(autoEndColor.slice(5, 7), 16) / 255;
-                      const max = Math.max(r, g, b);
-                      const min = Math.min(r, g, b);
-                      const delta = max - min;
-                      let h = 0;
-                      if (delta !== 0) {
-                        if (max === r) h = ((g - b) / delta) % 6;
-                        else if (max === g) h = (b - r) / delta + 2;
-                        else h = (r - g) / delta + 4;
-                        h *= 60;
-                        if (h < 0) h += 360;
-                      }
-                      const s = max === 0 ? 0 : (delta / max) * 100;
-                      const v = max * 100;
-                      return { h, s, v };
-                    })();
+                    const actualStartHex = syncAutoGradientStart(newColor, gradientSaturation);
+                    const autoEndColor = lighten(actualStartHex, (gradientEndPct / 100) * MAX_LIGHTEN);
+                    const endHSV = hexToHSV(autoEndColor);
                     setGradientEditor({ ...gradientEditor, startH: newH, startS: newS, startV: newV, endH: endHSV.h, endS: endHSV.s, endV: endHSV.v });
                   } else {
                     setGradientEditor({ ...gradientEditor, startH: newH, startS: newS, startV: newV });
@@ -3926,7 +3966,10 @@ export default function App() {
                     const toHex = (n) => Math.round((n + m) * 255).toString(16).padStart(2, '0');
                     return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
                   };
-                  const start = hsvToHex(gradientEditor.startH, gradientEditor.startS, gradientEditor.startV);
+                  const baseStart = hsvToHex(gradientEditor.startH, gradientEditor.startS, gradientEditor.startV);
+                  const start = gradientEditor.manualMode
+                    ? baseStart
+                    : syncAutoGradientStart(baseStart, gradientSaturation);
                   const end = hsvToHex(gradientEditor.endH, gradientEditor.endS, gradientEditor.endV);
                   const steps = gradientSteps;
                   const newColors = [];
@@ -5361,7 +5404,11 @@ export default function App() {
                       let val = e.currentTarget.textContent.toUpperCase();
                       if (!val.startsWith('#')) val = '#' + val;
                       if (/^#[0-9A-F]{0,6}$/.test(val)) {
-                        setGradientStart(val);
+                        if (val.length === 7) {
+                          commitGradientStart(val);
+                        } else {
+                          setGradientStart(val);
+                        }
                       }
                     }}
                     onBlur={e => {
@@ -5403,8 +5450,11 @@ export default function App() {
                         const newManual = !gradientManualEnd;
                         setGradientManualEnd(newManual);
                         if (!newManual) {
-                          // Switching back to auto - recalculate end color
-                          const autoEnd = lighten(gradientStart, (gradientEndPct / 100) * MAX_LIGHTEN);
+                          const adjustedStart = syncAutoGradientStart(gradientStartBase, gradientSaturation);
+                          if (adjustedStart !== gradientStart) {
+                            setGradientStart(adjustedStart);
+                          }
+                          const autoEnd = lighten(adjustedStart, (gradientEndPct / 100) * MAX_LIGHTEN);
                           setGradientEndColor(autoEnd);
                         }
                       }}
@@ -5501,7 +5551,11 @@ export default function App() {
                   max={1}
                   step={0.01}
                   value={gradientSaturation}
-                  onChange={e => setGradientSaturation(Number(e.target.value))}
+                  onChange={e => {
+                    const value = Number(e.target.value);
+                    setGradientSaturation(value);
+                    applyAutoGradientStart(value);
+                  }}
                   disabled={gradientControlsLocked}
                   style={{ flex: 1, opacity: gradientControlsLocked ? 0.4 : 1 }}
                   aria-label="Gradient Saturation"
@@ -5517,7 +5571,9 @@ export default function App() {
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingSat(false); }}
                     onChange={e => {
                       let v = Math.max(0, Math.min(100, Number(e.target.value)));
-                      setGradientSaturation(v / 100);
+                      const normalized = v / 100;
+                      setGradientSaturation(normalized);
+                      applyAutoGradientStart(normalized);
                     }}
                     disabled={gradientControlsLocked}
                     style={{ width: 56, fontSize: 13, color: gradientControlsLocked ? '#555' : '#fff', background: '#181818', border: '1px solid #444', borderRadius: 4, textAlign: 'center', padding: '2px 4px', fontWeight: 600, opacity: gradientControlsLocked ? 0.4 : 1 }}
